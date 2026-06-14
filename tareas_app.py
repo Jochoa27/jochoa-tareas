@@ -12,7 +12,6 @@ import requests
 from pathlib import Path
 from datetime import date, timedelta
 import streamlit.components.v1 as components
-from streamlit_sortables import sort_items
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 ARCHIVO = Path(__file__).parent / "TAREAS_JOCHOA.xlsx"
@@ -562,43 +561,77 @@ if mod == "Centro de Comando":
 
     # ── Agenda del Día ────────────────────────────────────────────────────────
     with col_ag:
-        seccion("📌", "AGENDA DEL DÍA · arrastra para reordenar", C_CRITICO)
+        seccion("📌", "AGENDA DEL DÍA", C_CRITICO)
         agenda_base = ac[
             (ac["PRIORIDAD"].isin(["Crítica","Alta"])) |
             (ac["FECHA_COMPROMISO"].notna() &
              (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=1)))
         ].head(14)
-
-        # Incluir también completadas visibles (para mostrar tachadas)
         agenda_ids_all = set(agenda_base["ID"].astype(int))
-        id_to_row = {int(r["ID"]): r for _, r in agenda_base.iterrows()}
+        id_to_row      = {int(r["ID"]): r for _, r in agenda_base.iterrows()}
 
         if not id_to_row:
             st.markdown('<div style="color:#334155;font-size:0.80rem;padding:20px;text-align:center;">'
                         '✅ No hay tareas urgentes pendientes</div>', unsafe_allow_html=True)
         else:
-            # Mantener/actualizar orden en session_state
+            # ── Reconciliar orden ────────────────────────────────────────────
             prev = st.session_state.get("agenda_order", [])
-            cur_ids = list(id_to_row.keys())
-            ordered = [i for i in prev if i in agenda_ids_all]
-            ordered += [i for i in cur_ids if i not in ordered]
-            st.session_state["agenda_order"] = ordered
+            ordered_ids = [i for i in prev if i in agenda_ids_all]
+            ordered_ids += [i for i in id_to_row if i not in ordered_ids]
+            st.session_state["agenda_order"] = ordered_ids
 
-            # Labels codificadas con ID para el drag
-            labels = [f"[{i}] {str(id_to_row[i]['TAREA'])[:42]}" for i in ordered]
-            sorted_labels = sort_items(labels, key="agenda_drag")
-            # Actualizar orden según arrastre
-            new_order = []
-            for lbl in sorted_labels:
-                m = re.match(r'\[(\d+)\]', lbl)
-                if m:
-                    new_order.append(int(m.group(1)))
-            st.session_state["agenda_order"] = new_order
+            # ── Inputs ocultos para comunicación con JS ──────────────────────
+            if "ag_drag_order" not in st.session_state:
+                st.session_state["ag_drag_order"] = ",".join(str(i) for i in ordered_ids)
+            if "ag_task_action" not in st.session_state:
+                st.session_state["ag_task_action"] = ""
 
-            st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+            ag_order_raw  = st.text_input("DRAG_ORDER",  key="ag_drag_order")
+            ag_action_raw = st.text_input("TASK_ACTION", key="ag_task_action")
 
-            # Renderizar tarjetas en el nuevo orden
-            for task_id in new_order:
+            st.markdown(
+                '<style>'
+                'div[data-testid="stTextInput"]:has(input[aria-label="DRAG_ORDER"]),'
+                'div[data-testid="stTextInput"]:has(input[aria-label="TASK_ACTION"])'
+                '{display:none!important;}</style>',
+                unsafe_allow_html=True)
+
+            # ── Procesar cambio de orden ──────────────────────────────────────
+            if ag_order_raw.strip():
+                try:
+                    new_ids = [int(x) for x in ag_order_raw.split(",") if x.strip()]
+                    if set(new_ids) == agenda_ids_all:
+                        ordered_ids = new_ids
+                        st.session_state["agenda_order"] = new_ids
+                except Exception:
+                    pass
+
+            # ── Procesar acción de checkbox ───────────────────────────────────
+            if ag_action_raw.strip() and _token():
+                try:
+                    tid_str, new_st_val = ag_action_raw.strip().split(":", 1)
+                    tid_val = int(tid_str)
+                    st.session_state["ag_task_action"] = ""   # limpiar antes del rerun
+                    df_copy = df_raw.copy()
+                    m2 = df_copy["ID"] == tid_val
+                    df_copy.loc[m2, "ESTADO"] = new_st_val
+                    df_copy.loc[m2, "FECHA_CIERRE"] = (
+                        pd.Timestamp(HOY) if new_st_val == "Completada" else pd.NaT
+                    )
+                    with st.spinner("Guardando..."):
+                        ok2, msg2 = guardar_github(df_copy)
+                    if ok2:
+                        st.toast("✅ Guardado")
+                        st.rerun()
+                    else:
+                        st.error(msg2)
+                except Exception:
+                    st.session_state["ag_task_action"] = ""
+
+            # ── Construir HTML de tarjetas ────────────────────────────────────
+            _PICO = {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"}
+            cards_html = ""
+            for task_id in ordered_ids:
                 r = id_to_row.get(task_id)
                 if r is None:
                     continue
@@ -606,34 +639,98 @@ if mod == "Centro de Comando":
                 p   = str(r.get("PRIORIDAD","Media"))
                 pc  = PRIO_CLR.get(p, C_GRIS)
                 fc  = r.get("FECHA_COMPROMISO")
-                sc, sd = semaforo(fc)
-                venc_r  = pd.notna(fc) and fc < HOY_TS and not is_done
-                bg  = "rgba(255,71,87,0.04)" if venc_r else ("rgba(35,209,96,0.03)" if is_done else "rgba(13,21,38,0.70)")
-                brd = "rgba(255,71,87,0.18)" if venc_r else (f"{C_OK}20" if is_done else f"{pc}20")
-                tipo = str(r.get("TIPO","Tarea"))
-                tc   = TIPO_CLR.get(tipo, C_CIAN)
-                proj = str(r.get("PROYECTO",""))
-                strike = "text-decoration:line-through;opacity:0.45;" if is_done else ""
-                nombre_display = f'<span style="{strike}">{r["TAREA"]}</span>'
+                sc_c, sd_t = semaforo(fc)
+                venc_r = pd.notna(fc) and fc < HOY_TS and not is_done
+                tipo  = str(r.get("TIPO","Tarea"))
+                tc    = TIPO_CLR.get(tipo, C_CIAN)
+                proj  = str(r.get("PROYECTO",""))
+                if venc_r:
+                    bg_c, brd_c = "rgba(255,71,87,0.05)", "rgba(255,71,87,0.22)"
+                elif is_done:
+                    bg_c, brd_c = "rgba(35,209,96,0.03)", "rgba(35,209,96,0.16)"
+                else:
+                    bg_c, brd_c = "rgba(13,21,38,0.85)", f"{pc}22"
+                chk_attr = "checked" if is_done else ""
+                nm_sty   = "text-decoration:line-through;opacity:0.42;color:#64748B;" if is_done else ""
+                nm_text  = (str(r.get("TAREA",""))
+                            .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
+                pchip = (f'<span style="background:{pc}18;color:{pc};border:1px solid {pc}30;'
+                         f'font-size:0.55rem;font-weight:700;padding:2px 7px;border-radius:20px;">'
+                         f'{_PICO.get(p,"")} {p}</span>')
+                tchip = (f'<span style="background:{tc}18;color:{tc};border:1px solid {tc}30;'
+                         f'font-size:0.55rem;font-weight:700;padding:2px 7px;border-radius:20px;">'
+                         f'{tipo}</span>')
+                prchip = (f'<span style="background:#6366F118;color:#6366F1;border:1px solid #6366F130;'
+                          f'font-size:0.55rem;font-weight:700;padding:2px 7px;border-radius:20px;">'
+                          f'{proj}</span>') if proj else ""
+                cards_html += (
+                    f'<div class="sc" data-id="{task_id}" '
+                    f'style="background:{bg_c};border:1px solid {brd_c};">'
+                    f'<label class="chkw"><input type="checkbox" data-id="{task_id}" {chk_attr}></label>'
+                    f'<div class="body">'
+                    f'<div class="chips">{pchip} {tchip} {prchip}</div>'
+                    f'<div class="nm" style="{nm_sty}">{nm_text}</div>'
+                    f'<div class="meta" style="color:{sc_c};">⏱ {sd_t}</div>'
+                    f'</div>'
+                    f'<div class="hdl" title="Arrastrar para reordenar">⠿</div>'
+                    f'</div>'
+                )
 
-                c_chk, c_card = st.columns([0.6, 11])
-                with c_chk:
-                    checked = st.checkbox(
-                        "", value=is_done, key=f"chk_{task_id}",
-                        label_visibility="collapsed",
-                        help="Marcar como completada / desmarcar para reactivar"
-                    )
-                    if checked != is_done and _token():
-                        _marcar_estado(task_id, "Completada" if checked else "Pendiente")
-                with c_card:
-                    st.markdown(
-                        f'<div class="tc" style="background:{bg};border-color:{brd};margin:0 0 4px;">'
-                        f'<div>{chip(f"{PRIO_ICO.get(p,"")} {p}", pc)}'
-                        f'{chip(tipo, tc)}{chip(proj, C_INDIGO)}</div>'
-                        f'<div class="tc-t">{nombre_display}</div>'
-                        f'<div class="tc-dt" style="color:{sc};">⏱ {sd}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True)
+            # ── Componente con SortableJS ─────────────────────────────────────
+            token_ok = "true" if _token() else "false"
+            comp_h   = len(ordered_ids) * 92 + 20
+            components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
+.list{{display:flex;flex-direction:column;gap:5px;padding:2px;}}
+.sc{{border-radius:12px;padding:9px 11px;display:flex;align-items:flex-start;
+     gap:9px;user-select:none;transition:box-shadow .15s;}}
+.sortable-ghost{{opacity:.28;transform:scale(.98);}}
+.sortable-chosen{{box-shadow:0 6px 28px rgba(56,189,248,.22);}}
+.hdl{{color:#2A3A52;font-size:1.1rem;cursor:grab;padding-top:1px;flex-shrink:0;}}
+.hdl:active{{cursor:grabbing;}}
+.chkw{{padding-top:2px;flex-shrink:0;}}
+input[type=checkbox]{{width:16px;height:16px;accent-color:#23D160;cursor:pointer;}}
+.body{{flex:1;min-width:0;}}
+.chips{{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;}}
+.nm{{font-size:.79rem;font-weight:700;color:#E2E8F0;line-height:1.32;margin-bottom:3px;word-break:break-word;}}
+.meta{{font-size:.60rem;}}
+</style></head><body>
+<div class="list" id="sl">{cards_html}</div>
+<script>
+var hasToken={token_ok};
+function notify(type,val){{
+  try{{
+    var sel=type==='order'?'input[aria-label="DRAG_ORDER"]':'input[aria-label="TASK_ACTION"]';
+    var el=window.parent.document.querySelector(sel);
+    if(!el)return;
+    var s=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
+    s.call(el,val);
+    el.dispatchEvent(new Event('input',{{bubbles:true}}));
+  }}catch(e){{console.error('notify:',e);}}
+}}
+Sortable.create(document.getElementById('sl'),{{
+  animation:160,handle:'.hdl',ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
+  onEnd:function(){{
+    var ids=Array.from(document.getElementById('sl').children).map(function(c){{return c.dataset.id;}}).join(',');
+    notify('order',ids);
+  }}
+}});
+if(hasToken){{
+  document.querySelectorAll('input[type=checkbox]').forEach(function(chk){{
+    chk.addEventListener('change',function(){{
+      var tid=this.dataset.id;
+      var ns=this.checked?'Completada':'Pendiente';
+      var nm=this.closest('.sc').querySelector('.nm');
+      if(this.checked){{nm.style.textDecoration='line-through';nm.style.opacity='.42';nm.style.color='#64748B';}}
+      else{{nm.style.textDecoration='';nm.style.opacity='';nm.style.color='';}}
+      notify('action',tid+':'+ns);
+    }});
+  }});
+}}
+</script></body></html>""", height=comp_h, scrolling=False)
 
     # ── Próximos 7 días (lista compacta) ─────────────────────────────────────
     with col_prox:
