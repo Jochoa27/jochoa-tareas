@@ -559,6 +559,9 @@ if mod == "Centro de Comando":
     st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
     # ── Inputs compartidos JS→Python (agenda + calendario) ────────────────────
+    # Limpiar widget del rerun anterior ANTES de renderizarlo (regla de Streamlit)
+    if st.session_state.pop("_clr_action", False):
+        st.session_state["ag_task_action"] = ""
     if "ag_task_action" not in st.session_state:
         st.session_state["ag_task_action"] = ""
     if "ag_drag_order" not in st.session_state:
@@ -580,7 +583,7 @@ if mod == "Centro de Comando":
             _aty = _pts[0] if len(_pts) >= 2 else "complete"
             _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
             _val = _pts[2] if len(_pts) >= 3 else ""
-            st.session_state["ag_task_action"] = ""
+            st.session_state["_clr_action"] = True   # limpiar widget en PRÓXIMO rerun
             if _aty == "open":
                 st.session_state["detalle_id"] = _tid
                 st.rerun()
@@ -600,7 +603,7 @@ if mod == "Centro de Comando":
                 else:
                     st.error(_ms)
         except Exception:
-            st.session_state["ag_task_action"] = ""
+            st.session_state["_clr_action"] = True
 
     # ── Toggle Agenda / Calendario ────────────────────────────────────────────
     if "cc_view" not in st.session_state:
