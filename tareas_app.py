@@ -569,7 +569,9 @@ if mod == "Centro de Comando":
         '<style>'
         'div[data-testid="stTextInput"]:has(input[aria-label="TASK_ACTION"]),'
         'div[data-testid="stTextInput"]:has(input[aria-label="DRAG_ORDER"])'
-        '{display:none!important;}</style>', unsafe_allow_html=True)
+        '{position:absolute!important;left:-9999px!important;width:1px!important;'
+        'height:1px!important;overflow:hidden!important;}</style>',
+        unsafe_allow_html=True)
 
     # ── Procesar acciones (compartido) ────────────────────────────────────────
     if ag_action_raw.strip():
@@ -835,7 +837,11 @@ function nfy(v){{
     var el=window.parent.document.querySelector('input[aria-label="TASK_ACTION"]');
     if(!el)return;
     var s=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
-    s.call(el,v); el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    s.call(el,v);
+    el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    el.dispatchEvent(new KeyboardEvent('keydown',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keypress',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keyup',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
   }}catch(e){{console.error(e);}}
 }}
 document.querySelectorAll('.dz').forEach(function(dz){{
@@ -988,6 +994,9 @@ function notify(type,val){{
     var s=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
     s.call(el,val);
     el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    el.dispatchEvent(new KeyboardEvent('keydown',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keypress',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keyup',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
   }}catch(e){{console.error('notify:',e);}}
 }}
 Sortable.create(document.getElementById('sl'),{{
