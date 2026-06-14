@@ -111,30 +111,40 @@ hr{border:none;border-top:1px solid rgba(56,189,248,0.08);margin:12px 0;}
 </style>""", unsafe_allow_html=True)
 
 # ─── TEMAS DE COLOR ───────────────────────────────────────────────────────────
+# bg_css: gradiente CSS para el fondo de página (máximo impacto visual)
+# bg1: hex de referencia para Python (cards, badges inline)
 _THEMES = {
-    "abismo":  {
-        "name":"Abismo",  "icon":"🌑", "desc":"Azul marino profundo",
-        "bg1":"#060B15","bg_sb":"#05090F","bg2":"#08101F","bg3":"#0D1830",
-        "card1":"rgba(13,21,38,0.88)","card2":"rgba(13,21,38,0.72)",
+    "abismo": {
+        "name":"Abismo", "icon":"🌑", "desc":"Azul marino · default",
+        "bg_css":"linear-gradient(160deg,#060B15 0%,#08101F 60%,#040910 100%)",
+        "bg_sb":"#04080E",
+        "bg1":"#060B15","bg2":"#08101F","bg3":"#0D1830",
+        "card1":"rgba(10,18,36,0.93)","card2":"rgba(10,18,36,0.78)",
         "border":"#1E293B","abr":"56,189,248",
     },
-    "grafito": {
-        "name":"Grafito", "icon":"🌫️","desc":"Carbón obsidiana",
-        "bg1":"#0D0F14","bg_sb":"#0A0C10","bg2":"#14161D","bg3":"#1E2030",
-        "card1":"rgba(22,24,30,0.88)","card2":"rgba(22,24,30,0.72)",
-        "border":"#2D2F3E","abr":"56,189,248",
+    "cosmos": {
+        "name":"Cosmos",  "icon":"🔮", "desc":"Violeta amatista profundo",
+        "bg_css":"linear-gradient(135deg,#130035 0%,#0A001E 55%,#1C0055 100%)",
+        "bg_sb":"#0D0028",
+        "bg1":"#130035","bg2":"#1C0050","bg3":"#260070",
+        "card1":"rgba(30,5,70,0.93)","card2":"rgba(30,5,70,0.78)",
+        "border":"#3D1080","abr":"168,85,247",
     },
-    "cosmos":  {
-        "name":"Cosmos",  "icon":"🌌","desc":"Violeta sideral",
-        "bg1":"#08041E","bg_sb":"#060218","bg2":"#100830","bg3":"#1A1050",
-        "card1":"rgba(16,10,40,0.88)","card2":"rgba(16,10,40,0.72)",
-        "border":"#1E1840","abr":"168,85,247",
+    "profundo": {
+        "name":"Profundo", "icon":"🌊", "desc":"Océano azul eléctrico",
+        "bg_css":"linear-gradient(160deg,#001C38 0%,#000E22 55%,#001E44 100%)",
+        "bg_sb":"#000C1C",
+        "bg1":"#001C38","bg2":"#001530","bg3":"#002248",
+        "card1":"rgba(0,30,60,0.93)","card2":"rgba(0,30,60,0.78)",
+        "border":"#004080","abr":"56,189,248",
     },
-    "abeto":   {
-        "name":"Abeto",   "icon":"🌲","desc":"Verde bosque oscuro",
-        "bg1":"#041412","bg_sb":"#030E0C","bg2":"#081E1A","bg3":"#0F2E28",
-        "card1":"rgba(8,28,24,0.88)","card2":"rgba(8,28,24,0.72)",
-        "border":"#0D2828","abr":"35,209,96",
+    "selva": {
+        "name":"Selva",   "icon":"🌿", "desc":"Jungla oscura",
+        "bg_css":"linear-gradient(145deg,#002010 0%,#001408 55%,#002818 100%)",
+        "bg_sb":"#000E08",
+        "bg1":"#002010","bg2":"#001C10","bg3":"#003020",
+        "card1":"rgba(0,35,20,0.93)","card2":"rgba(0,35,20,0.78)",
+        "border":"#00502A","abr":"35,209,96",
     },
 }
 
@@ -145,11 +155,21 @@ C_BG2 = _TC["bg2"]
 C_BG3 = _TC["bg3"]
 _ABR  = _TC["abr"]
 
-# CSS dinámico: sobreescribe fondos del bloque estático según tema
+# CSS dinámico: gradiente de fondo + sidebar coloreado según tema
 st.markdown(f"""<style>
-[data-testid="stAppViewContainer"]{{background:{C_BG};}}
-[data-testid="stSidebar"]{{background:{_TC['bg_sb']};
-    border-right:1px solid rgba({_ABR},0.10);}}
+[data-testid="stAppViewContainer"]{{
+    background:{_TC['bg_css']} !important;
+    min-height:100vh;
+}}
+[data-testid="stSidebar"]{{
+    background:{_TC['bg_sb']} !important;
+    border-right:2px solid rgba({_ABR},0.18) !important;
+    box-shadow:4px 0 24px rgba({_ABR},0.06) !important;
+}}
+/* Profundidad: gradiente en paneles de Streamlit */
+section[data-testid="stMain"]>div>div[data-testid="stVerticalBlock"]>div[data-testid="stHorizontalBlock"]>div>div[data-testid="stVerticalBlock"]{{
+    border-radius:14px;
+}}
 </style>""", unsafe_allow_html=True)
 
 # ─── DATA LOADING ─────────────────────────────────────────────────────────────
@@ -514,16 +534,30 @@ with st.sidebar:
 
     # ── Selector de tema ──────────────────────────────────────────────────────
     st.markdown(
-        '<div style="height:1px;background:rgba(255,255,255,0.05);margin:14px 0 10px;"></div>'
-        '<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.16em;'
-        'color:#334155;text-transform:uppercase;margin-bottom:8px;">🎨 TEMA DE FONDO</div>',
+        '<div style="height:1px;background:rgba(255,255,255,0.05);margin:14px 0 10px;"></div>',
         unsafe_allow_html=True)
+    # Swatches visuales con color real
+    _sw_html = '<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.16em;color:#334155;text-transform:uppercase;margin-bottom:8px;">🎨 TEMA</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">'
+    for _tkey, _tcc in _THEMES.items():
+        _active = _tkey == _TK
+        _ring = f"box-shadow:0 0 0 2px rgba({_tcc['abr']},0.80);" if _active else ""
+        _sw_html += (
+            f'<div style="border-radius:8px;overflow:hidden;cursor:pointer;{_ring}">'
+            f'<div style="background:{_tcc["bg_css"]};height:28px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:1rem;">{_tcc["icon"]}</div>'
+            f'<div style="background:{_tcc["bg_sb"]};padding:3px 5px;font-size:0.48rem;'
+            f'font-weight:700;color:rgba({_tcc["abr"]},1);letter-spacing:0.04em;">'
+            f'{"✓ " if _active else ""}{_tcc["name"]}</div></div>'
+        )
+    _sw_html += '</div>'
+    st.markdown(_sw_html, unsafe_allow_html=True)
+    st.markdown('<div style="height:5px;"></div>', unsafe_allow_html=True)
     _th_a, _th_b = st.columns(2)
     for _ti, (_tkey, _tcc) in enumerate(_THEMES.items()):
         _col = _th_a if _ti % 2 == 0 else _th_b
         _sel_mrk = "✓ " if _tkey == _TK else ""
         with _col:
-            if st.button(f"{_sel_mrk}{_tcc['icon']} {_tcc['name']}", key=f"th_{_tkey}",
+            if st.button(f"{_sel_mrk}{_tcc['name']}", key=f"th_{_tkey}",
                          use_container_width=True, help=_tcc['desc']):
                 st.session_state["theme"] = _tkey
                 st.rerun()
