@@ -857,10 +857,15 @@ if(HT){{
     }});
   }});
 }}
+var _dbc={{}};
 document.querySelectorAll('.tc').forEach(function(c){{
-  c.addEventListener('dblclick',function(e){{
-    e.preventDefault();
-    nfy('open:'+this.dataset.id+':');
+  c.addEventListener('click',function(e){{
+    if(e.target.closest('.tc-chk'))return;
+    var tid=this.dataset.id,now=Date.now();
+    if(_dbc[tid]&&(now-_dbc[tid])<380){{
+      _dbc[tid]=0;
+      nfy('open:'+tid+':');
+    }}else{{_dbc[tid]=now;}}
   }});
 }});
 </script></body></html>""", height=_cal_h, scrolling=False)
@@ -1004,10 +1009,15 @@ if(hasToken){{
     }});
   }});
 }}
+var _dbt={{}};
 document.querySelectorAll('.sc').forEach(function(c){{
-  c.addEventListener('dblclick',function(e){{
-    e.preventDefault();
-    notify('action','open:'+this.dataset.id+':');
+  c.addEventListener('click',function(e){{
+    if(e.target.closest('.hdl')||e.target.closest('.chkw'))return;
+    var tid=this.dataset.id,now=Date.now();
+    if(_dbt[tid]&&(now-_dbt[tid])<380){{
+      _dbt[tid]=0;
+      notify('action','open:'+tid+':');
+    }}else{{_dbt[tid]=now;}}
   }});
 }});
 </script></body></html>""", height=comp_h, scrolling=False)
