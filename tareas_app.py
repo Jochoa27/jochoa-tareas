@@ -411,6 +411,3 @@ with tab4:
             df_hd[c] = df_hd[c].dt.strftime("%d/%m/%Y").fillna("—")
     st.dataframe(df_hd.fillna("—"), use_container_width=True, hide_index=True)
 
-# ─── AUTO-REFRESH ─────────────────────────────────────────────────────────────
-from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=60_000, key="tareas_auto")
