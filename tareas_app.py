@@ -5,6 +5,9 @@
 import streamlit as st
 import pandas as pd
 import json
+import base64
+import io
+import requests
 from pathlib import Path
 from datetime import date, timedelta
 import streamlit.components.v1 as components
@@ -222,6 +225,106 @@ def tasa_cumplimiento_semana():
     total = len(comp_sem) + len(venc_sem)
     return round(len(comp_sem) / max(total, 1) * 100), len(comp_sem)
 
+# ─── GITHUB SAVE ──────────────────────────────────────────────────────────────
+_GH_REPO   = "Jochoa27/jochoa-tareas"
+_GH_FILE   = "TAREAS_JOCHOA.xlsx"
+_GH_BRANCH = "main"
+
+def _token():
+    try:
+        return st.secrets.get("GITHUB_TOKEN", "")
+    except Exception:
+        return ""
+
+def guardar_github(df_tareas_nuevo):
+    """Sobreescribe TAREAS sheet en el repo vía GitHub API y limpia caché."""
+    token = _token()
+    if not token:
+        return False, (
+            "GITHUB_TOKEN no configurado. "
+            "Ve a Streamlit Cloud → Manage app → Secrets y agrega:\n"
+            "GITHUB_TOKEN = \"ghp_tu_token_aqui\""
+        )
+    hdrs   = {"Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json"}
+    api    = f"https://api.github.com/repos/{_GH_REPO}/contents/{_GH_FILE}"
+
+    # SHA del archivo actual
+    r = requests.get(api, headers=hdrs, timeout=10)
+    if r.status_code != 200:
+        return False, f"Error leyendo repo ({r.status_code}): {r.json().get('message','')}"
+    sha = r.json()["sha"]
+
+    # Construir Excel multi-hoja en memoria
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        # Normalizar tipos antes de escribir
+        df_save = df_tareas_nuevo.copy()
+        for c in ["FECHA_CREACION","FECHA_COMPROMISO","FECHA_CIERRE"]:
+            if c in df_save.columns:
+                df_save[c] = pd.to_datetime(df_save[c], errors="coerce")
+        # Eliminar columnas internas
+        df_save = df_save.drop(columns=["PRIO_ORD"], errors="ignore")
+        df_save.to_excel(writer, sheet_name="TAREAS", index=False)
+        # Preservar otras hojas
+        ter_save = df_ter.drop(columns=["DIAS_SIN_RESP"], errors="ignore")
+        if not ter_save.empty:
+            ter_save.to_excel(writer, sheet_name="TERCEROS", index=False)
+        if not df_reu.empty:
+            df_reu.to_excel(writer, sheet_name="REUNIONES", index=False)
+    buf.seek(0)
+
+    ts      = pd.Timestamp.now().strftime("%d/%m %H:%M")
+    payload = {
+        "message": f"update: tareas actualizadas desde app ({ts})",
+        "content": base64.b64encode(buf.read()).decode(),
+        "sha":     sha,
+        "branch":  _GH_BRANCH,
+    }
+    r2 = requests.put(api, json=payload, headers=hdrs, timeout=15)
+    if r2.status_code in (200, 201):
+        cargar.clear()
+        return True, f"Guardado a las {ts}"
+    return False, f"Error al guardar ({r2.status_code}): {r2.json().get('message','')}"
+
+def _marcar_estado(task_id, nuevo_estado):
+    """Cambia el estado de una tarea y guarda en GitHub."""
+    df_copy = df_raw.copy()
+    mask = df_copy["ID"] == task_id
+    df_copy.loc[mask, "ESTADO"] = nuevo_estado
+    if nuevo_estado == "Completada":
+        df_copy.loc[mask, "FECHA_CIERRE"] = pd.Timestamp(HOY)
+    with st.spinner("Guardando..."):
+        ok, msg = guardar_github(df_copy)
+    if ok:
+        st.toast("Tarea actualizada", icon="✅")
+        st.rerun()
+    else:
+        st.error(msg)
+
+def _merge_edits(df_original, df_edited):
+    """Fusiona las filas editadas de vuelta al DataFrame completo."""
+    df_result = df_original.copy()
+    for _, row in df_edited.iterrows():
+        rid = row.get("ID")
+        if pd.notna(rid):
+            mask = df_result["ID"] == rid
+            for col in row.index:
+                if col in df_result.columns:
+                    df_result.loc[mask, col] = row[col]
+        else:
+            # Fila nueva
+            new = row.to_frame().T.copy()
+            new["ID"] = int(df_result["ID"].max() or 0) + 1
+            if "FECHA_CREACION" not in new.columns or pd.isna(new["FECHA_CREACION"].values[0]):
+                new["FECHA_CREACION"] = pd.Timestamp(HOY)
+            if "ESTADO" not in new.columns or str(new["ESTADO"].values[0]) == "nan":
+                new["ESTADO"] = "Pendiente"
+            if "PRIORIDAD" not in new.columns or str(new["PRIORIDAD"].values[0]) == "nan":
+                new["PRIORIDAD"] = "Media"
+            df_result = pd.concat([df_result, new], ignore_index=True)
+    return df_result
+
 # ─── HELPERS VISUALES ─────────────────────────────────────────────────────────
 def seccion(icon, titulo, color=C_CIAN):
     st.markdown(
@@ -342,6 +445,18 @@ with st.sidebar:
         f'{HOY.strftime("%A %d de %B")}</div>'
         f'</div>', unsafe_allow_html=True)
 
+    # Aviso de token
+    if not _token():
+        st.markdown(
+            '<div style="background:rgba(255,179,0,0.08);border:1px solid rgba(255,179,0,0.24);'
+            'border-radius:10px;padding:10px 12px;margin-top:10px;">'
+            '<div style="font-size:0.58rem;font-weight:800;color:#FFB300;margin-bottom:4px;">'
+            '⚠️ EDICIÓN DESACTIVADA</div>'
+            '<div style="font-size:0.56rem;color:#64748B;line-height:1.5;">'
+            'Agrega GITHUB_TOKEN en Streamlit Cloud → Manage app → Secrets para habilitar '
+            'guardar desde la plataforma.</div>'
+            '</div>', unsafe_allow_html=True)
+
 mod = st.session_state.mod
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -432,30 +547,44 @@ if mod == "Centro de Comando":
             st.markdown('<div style="color:#334155;font-size:0.80rem;padding:20px;text-align:center;">'
                         '✅ No hay tareas urgentes pendientes</div>', unsafe_allow_html=True)
         else:
-            cards_html = ""
             for _, r in agenda.iterrows():
+                task_id = int(r.get("ID", 0))
                 p   = str(r.get("PRIORIDAD","Media"))
                 pc  = PRIO_CLR.get(p, C_GRIS)
                 est = str(r.get("ESTADO","Pendiente"))
                 ec2 = EST_CLR.get(est, C_GRIS)
                 fc  = r.get("FECHA_COMPROMISO")
                 sc, sd = semaforo(fc)
-                venc_r = pd.notna(fc) and fc < HOY_TS
-                bg  = f"rgba(255,71,87,0.06)" if venc_r else "rgba(13,21,38,0.70)"
-                brd = f"rgba(255,71,87,0.28)" if venc_r else f"{pc}24"
+                venc_r  = pd.notna(fc) and fc < HOY_TS
+                bg  = "rgba(255,71,87,0.06)" if venc_r else "rgba(13,21,38,0.70)"
+                brd = "rgba(255,71,87,0.28)" if venc_r else f"{pc}24"
                 tipo = str(r.get("TIPO","Tarea"))
                 tc   = TIPO_CLR.get(tipo, C_CIAN)
                 proj = str(r.get("PROYECTO",""))
-                cards_html += (
+                st.markdown(
                     f'<div class="tc" style="background:{bg};border-color:{brd};">'
                     f'<div>{chip(f"{PRIO_ICO.get(p,"")} {p}", pc)}'
-                    f'{chip(tipo, tc)}{chip(proj, C_INDIGO)}</div>'
+                    f'{chip(tipo, tc)}{chip(proj, C_INDIGO)}'
+                    f'<span style="float:right;">{chip(est, ec2)}</span></div>'
                     f'<div class="tc-t">{r["TAREA"]}</div>'
-                    f'<div class="tc-dt" style="color:{sc};">⏱ {sd}'
-                    f' &nbsp;·&nbsp; {chip(est, ec2)}</div>'
-                    f'</div>'
-                )
-            st.markdown(f'<div class="scroll-box">{cards_html}</div>', unsafe_allow_html=True)
+                    f'<div class="tc-dt" style="color:{sc};">⏱ {sd}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True)
+                if est not in ("Completada","Cancelada") and _token():
+                    bb1, bb2, bb3, _ = st.columns([2, 2, 2, 6])
+                    with bb1:
+                        if st.button("✅ Completar", key=f"done_{task_id}",
+                                     use_container_width=True):
+                            _marcar_estado(task_id, "Completada")
+                    with bb2:
+                        if st.button("🔄 Proceso", key=f"proc_{task_id}",
+                                     use_container_width=True):
+                            _marcar_estado(task_id, "En Proceso")
+                    with bb3:
+                        if st.button("⌛ Terceros", key=f"terc_{task_id}",
+                                     use_container_width=True):
+                            _marcar_estado(task_id, "Esperando Terceros")
+                st.markdown('<div style="height:2px;"></div>', unsafe_allow_html=True)
 
     # ── Próximos 7 días ───────────────────────────────────────────────────────
     with col_prox:
@@ -701,19 +830,124 @@ elif mod == "Bandeja Operacional":
         f'</div>',
         unsafe_allow_html=True)
 
-    # Tabla
-    cols_t = [c for c in ["TAREA","TIPO","PROYECTO","AREA","CATEGORIA","PRIORIDAD",
-                            "ESTADO","URGENCIA","IMPACTO","ESFUERZO_HRS","TERCERO",
-                            "FECHA_COMPROMISO","NOTAS"] if c in df_f.columns]
-    df_show = df_f[cols_t].copy()
-    if "FECHA_COMPROMISO" in df_show.columns:
-        df_show["FECHA_COMPROMISO"] = df_show["FECHA_COMPROMISO"].dt.strftime("%d/%m/%Y").fillna("—")
-    st.dataframe(df_show.fillna("—"), use_container_width=True, hide_index=True,
-                 height=min(650, 55 + len(df_show)*36))
-    st.markdown(
-        f'<div style="font-size:0.58rem;color:#334155;margin-top:8px;text-align:right;">'
-        f'📝 Editar: abre TAREAS_JOCHOA.xlsx localmente → git push para actualizar</div>',
-        unsafe_allow_html=True)
+    # ── Columnas y config del editor ──────────────────────────────────────────
+    COLS_EDIT = [c for c in ["ID","TAREA","TIPO","PROYECTO","AREA","CATEGORIA",
+                              "PRIORIDAD","ESTADO","IMPACTO","URGENCIA","ESFUERZO_HRS",
+                              "TERCERO","FECHA_COMPROMISO","FECHA_CIERRE","NOTAS"]
+                 if c in df_f.columns]
+    df_edit = df_f[COLS_EDIT].copy()
+    for dc in ["FECHA_COMPROMISO","FECHA_CIERRE"]:
+        if dc in df_edit.columns:
+            df_edit[dc] = pd.to_datetime(df_edit[dc], errors="coerce").dt.date
+
+    _OPTS_EST  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
+    _OPTS_PRIO = ["Crítica","Alta","Media","Baja"]
+    _OPTS_TIPO = ["Tarea","Seguimiento","Compromiso","Reunión"]
+    _OPTS_CAT  = ["Planificación","Contratos","Compras","Reportes","IA y Automatización",
+                  "Gestión Corporativa","Reuniones","Salud","Personal"]
+    _OPTS_AREA = ["Trabajo","Personal"]
+
+    col_cfg = {
+        "ID":              st.column_config.NumberColumn("ID", disabled=True, width="small"),
+        "TAREA":           st.column_config.TextColumn("Tarea", width="large"),
+        "TIPO":            st.column_config.SelectboxColumn("Tipo",      options=_OPTS_TIPO),
+        "PROYECTO":        st.column_config.TextColumn("Proyecto"),
+        "AREA":            st.column_config.SelectboxColumn("Área",      options=_OPTS_AREA),
+        "CATEGORIA":       st.column_config.SelectboxColumn("Categoría", options=_OPTS_CAT),
+        "PRIORIDAD":       st.column_config.SelectboxColumn("Prioridad", options=_OPTS_PRIO),
+        "ESTADO":          st.column_config.SelectboxColumn("Estado",    options=_OPTS_EST),
+        "IMPACTO":         st.column_config.NumberColumn("Impacto",  min_value=1, max_value=5, step=1),
+        "URGENCIA":        st.column_config.NumberColumn("Urgencia",  min_value=1, max_value=5, step=1),
+        "ESFUERZO_HRS":    st.column_config.NumberColumn("Horas",    min_value=0.0, step=0.5, format="%.1f"),
+        "TERCERO":         st.column_config.TextColumn("Tercero"),
+        "FECHA_COMPROMISO":st.column_config.DateColumn("Vence",  format="DD/MM/YYYY"),
+        "FECHA_CIERRE":    st.column_config.DateColumn("Cierre", format="DD/MM/YYYY"),
+        "NOTAS":           st.column_config.TextColumn("Notas", width="medium"),
+    }
+
+    edited = st.data_editor(
+        df_edit,
+        column_config=col_cfg,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key="editor_bandeja",
+        height=min(620, 55 + len(df_edit)*36 + 60),
+    )
+
+    # ── Barra de acción ────────────────────────────────────────────────────────
+    sa1, sa2, sa3 = st.columns([2, 2, 8])
+    with sa1:
+        guardar_btn = st.button("💾 Guardar en GitHub", type="primary",
+                                use_container_width=True, disabled=not _token())
+    with sa2:
+        if st.button("↩ Descartar cambios", use_container_width=True):
+            st.rerun()
+
+    if guardar_btn:
+        with st.spinner("Guardando en GitHub..."):
+            df_merged = _merge_edits(df_raw, edited)
+            ok, msg   = guardar_github(df_merged)
+        if ok:
+            st.success(f"✅ {msg}")
+            st.rerun()
+        else:
+            st.error(msg)
+
+    if not _token():
+        st.info(
+            "**Edición local desactivada.** Para guardar cambios desde la plataforma, "
+            "configura `GITHUB_TOKEN` en Streamlit Cloud → Manage app → Secrets. "
+            "O bien edita el Excel localmente y haz `git push`.",
+            icon="ℹ️"
+        )
+
+    # ── Nueva tarea rápida ─────────────────────────────────────────────────────
+    with st.expander("➕ Agregar tarea rápida"):
+        with st.form("nueva_tarea_form", clear_on_submit=True):
+            nt1, nt2, nt3 = st.columns(3)
+            with nt1: nt_nombre = st.text_input("Nombre de la tarea *")
+            with nt2: nt_proj   = st.text_input("Proyecto", value="GENERAL")
+            with nt3: nt_prio   = st.selectbox("Prioridad", _OPTS_PRIO, index=2)
+            nt4, nt5, nt6 = st.columns(3)
+            with nt4: nt_tipo   = st.selectbox("Tipo", _OPTS_TIPO)
+            with nt5: nt_cat    = st.selectbox("Categoría", _OPTS_CAT)
+            with nt6: nt_fecha  = st.date_input("Fecha compromiso", value=None)
+            nt_notas = st.text_area("Notas", height=60)
+            submitted = st.form_submit_button("Agregar tarea", type="primary",
+                                              use_container_width=True, disabled=not _token())
+            if submitted:
+                if not nt_nombre.strip():
+                    st.error("El nombre es obligatorio.")
+                else:
+                    nueva = {
+                        "ID":               int(df_raw["ID"].max() or 0) + 1,
+                        "TAREA":            nt_nombre.strip(),
+                        "DESCRIPCION":      "",
+                        "TIPO":             nt_tipo,
+                        "PROYECTO":         nt_proj.strip() or "GENERAL",
+                        "AREA":             "Trabajo",
+                        "CATEGORIA":        nt_cat,
+                        "PRIORIDAD":        nt_prio,
+                        "ESTADO":           "Pendiente",
+                        "IMPACTO":          3,
+                        "URGENCIA":         3,
+                        "ESFUERZO_HRS":     1.0,
+                        "TERCERO":          "",
+                        "FECHA_CREACION":   pd.Timestamp(HOY),
+                        "FECHA_COMPROMISO": pd.Timestamp(nt_fecha) if nt_fecha else pd.NaT,
+                        "FECHA_CIERRE":     pd.NaT,
+                        "NOTAS":            nt_notas,
+                    }
+                    df_nuevo = pd.concat(
+                        [df_raw, pd.DataFrame([nueva])], ignore_index=True)
+                    with st.spinner("Guardando..."):
+                        ok, msg = guardar_github(df_nuevo)
+                    if ok:
+                        st.success(f"Tarea agregada · {msg}")
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 4: SEGUIMIENTO DE TERCEROS
