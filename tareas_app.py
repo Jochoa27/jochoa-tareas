@@ -110,52 +110,73 @@ hr{border:none;border-top:1px solid rgba(56,189,248,0.08);margin:12px 0;}
 .scroll-box{overflow-y:auto;max-height:380px;padding-right:4px;}
 </style>""", unsafe_allow_html=True)
 
-# ─── TEMAS DE COLOR ───────────────────────────────────────────────────────────
-# bg_css: gradiente CSS para el fondo de página (máximo impacto visual)
-# bg1: hex de referencia para Python (cards, badges inline)
+# ─── TEMAS DE COLOR (3 temas mundo-clase) ─────────────────────────────────────
 _THEMES = {
-    "abismo": {
-        "name":"Abismo", "icon":"🌑", "desc":"Azul marino · default",
-        "bg_css":"linear-gradient(160deg,#060B15 0%,#08101F 60%,#040910 100%)",
-        "bg_sb":"#04080E",
-        "bg1":"#060B15","bg2":"#08101F","bg3":"#0D1830",
-        "card1":"rgba(10,18,36,0.93)","card2":"rgba(10,18,36,0.78)",
-        "border":"#1E293B","abr":"56,189,248",
+    "void": {
+        "name":"Void",  "icon":"⬛", "desc":"Ultra dark · premium",
+        "dark":True,
+        "bg_css":"linear-gradient(150deg,#050507 0%,#07090F 65%,#040408 100%)",
+        "bg_sb":"#030305",
+        "bg1":"#050507","bg2":"#07090F","bg3":"#0D0F18",
+        "card1":"rgba(8,8,14,0.97)","card2":"rgba(8,8,14,0.82)",
+        "border":"rgba(255,255,255,0.055)",
+        "nm_clr":"#E2E8F0","meta_clr":"#52525B",
+        "txt_dim":"#334155","abr":"56,189,248",
     },
-    "cosmos": {
-        "name":"Cosmos",  "icon":"🔮", "desc":"Violeta amatista profundo",
-        "bg_css":"linear-gradient(135deg,#130035 0%,#0A001E 55%,#1C0055 100%)",
-        "bg_sb":"#0D0028",
-        "bg1":"#130035","bg2":"#1C0050","bg3":"#260070",
-        "card1":"rgba(30,5,70,0.93)","card2":"rgba(30,5,70,0.78)",
-        "border":"#3D1080","abr":"168,85,247",
+    "zinc": {
+        "name":"Zinc",  "icon":"◼", "desc":"Dark gray · profesional",
+        "dark":True,
+        "bg_css":"linear-gradient(150deg,#18181B 0%,#1C1C1F 65%,#18181B 100%)",
+        "bg_sb":"#101012",
+        "bg1":"#18181B","bg2":"#1C1C1F","bg3":"#232327",
+        "card1":"rgba(28,28,31,0.97)","card2":"rgba(22,22,25,0.82)",
+        "border":"rgba(255,255,255,0.065)",
+        "nm_clr":"#E4E4E7","meta_clr":"#52525B",
+        "txt_dim":"#3F3F46","abr":"56,189,248",
     },
-    "profundo": {
-        "name":"Profundo", "icon":"🌊", "desc":"Océano azul eléctrico",
-        "bg_css":"linear-gradient(160deg,#001C38 0%,#000E22 55%,#001E44 100%)",
-        "bg_sb":"#000C1C",
-        "bg1":"#001C38","bg2":"#001530","bg3":"#002248",
-        "card1":"rgba(0,30,60,0.93)","card2":"rgba(0,30,60,0.78)",
-        "border":"#004080","abr":"56,189,248",
-    },
-    "selva": {
-        "name":"Selva",   "icon":"🌿", "desc":"Jungla oscura",
-        "bg_css":"linear-gradient(145deg,#002010 0%,#001408 55%,#002818 100%)",
-        "bg_sb":"#000E08",
-        "bg1":"#002010","bg2":"#001C10","bg3":"#003020",
-        "card1":"rgba(0,35,20,0.93)","card2":"rgba(0,35,20,0.78)",
-        "border":"#00502A","abr":"35,209,96",
+    "pearl": {
+        "name":"Pearl", "icon":"☀️", "desc":"Light · sidebar oscuro",
+        "dark":False,
+        "bg_css":"linear-gradient(150deg,#FAFAFA 0%,#F4F4F5 55%,#ECECEE 100%)",
+        "bg_sb":"#18181B",
+        "bg1":"#F4F4F5","bg2":"#E4E4E7","bg3":"#D4D4D8",
+        "card1":"rgba(255,255,255,0.97)","card2":"rgba(244,244,245,0.95)",
+        "border":"rgba(0,0,0,0.075)",
+        "nm_clr":"#18181B","meta_clr":"#71717A",
+        "txt_dim":"#A1A1AA","abr":"14,165,233",
     },
 }
 
-_TK   = st.session_state.get("theme", "abismo")
-_TC   = _THEMES.get(_TK, _THEMES["abismo"])
+_TK   = st.session_state.get("theme", "void")
+_TC   = _THEMES.get(_TK, _THEMES["void"])
+_DARK = _TC["dark"]
 C_BG  = _TC["bg1"]
 C_BG2 = _TC["bg2"]
 C_BG3 = _TC["bg3"]
 _ABR  = _TC["abr"]
 
-# CSS dinámico: gradiente de fondo + sidebar coloreado según tema
+_PEARL_CSS = "" if _DARK else f"""
+/* ── PEARL light mode overrides ── */
+.kpi-val{{color:#09090B!important;}}
+.kpi-lbl{{color:#71717A!important;}}
+.kpi-sub{{color:#52525B!important;}}
+.sh-txt{{color:#09090B!important;text-shadow:none!important;}}
+.sh{{border-bottom-color:rgba({_ABR},0.22)!important;}}
+hr{{border-top-color:rgba(0,0,0,0.07)!important;}}
+[data-testid="stMetricValue"]{{color:#09090B!important;}}
+[data-testid="stMetricLabel"]{{color:#71717A!important;}}
+[data-testid="metric-container"]{{
+    background:rgba(255,255,255,0.85)!important;
+    border-color:rgba(0,0,0,0.07)!important;
+    box-shadow:0 1px 6px rgba(0,0,0,0.06)!important;
+}}
+[data-testid="stDataFrame"]{{border-color:rgba(0,0,0,0.08)!important;}}
+[data-testid="stSelectbox"] label,[data-testid="stTextInput"] label,
+[data-testid="stTextArea"] label,[data-testid="stDateInput"] label{{
+    color:#3F3F46!important;
+}}
+"""
+
 st.markdown(f"""<style>
 [data-testid="stAppViewContainer"]{{
     background:{_TC['bg_css']} !important;
@@ -163,13 +184,25 @@ st.markdown(f"""<style>
 }}
 [data-testid="stSidebar"]{{
     background:{_TC['bg_sb']} !important;
-    border-right:2px solid rgba({_ABR},0.18) !important;
-    box-shadow:4px 0 24px rgba({_ABR},0.06) !important;
+    border-right:2px solid rgba({_ABR},0.20) !important;
+    box-shadow:4px 0 28px rgba({_ABR},0.07) !important;
 }}
-/* Profundidad: gradiente en paneles de Streamlit */
-section[data-testid="stMain"]>div>div[data-testid="stVerticalBlock"]>div[data-testid="stHorizontalBlock"]>div>div[data-testid="stVerticalBlock"]{{
-    border-radius:14px;
+/* ── Responsive móvil / tablet ── */
+@media(max-width:900px){{
+    .block-container{{padding:0.8rem 0.7rem 2rem!important;}}
+    .kpi-val{{font-size:1.15rem!important;}}
+    .kpi-card{{min-height:70px!important;padding:10px 12px 8px!important;}}
+    .kpi-lbl{{font-size:0.42rem!important;}}
+    .sh-txt{{font-size:0.74rem!important;}}
+    .sh{{margin:1rem 0 0.7rem!important;}}
 }}
+@media(max-width:640px){{
+    .block-container{{padding:0.5rem 0.4rem 1.5rem!important;}}
+    .kpi-val{{font-size:0.95rem!important;}}
+    .kpi-lbl{{font-size:0.38rem!important;}}
+    .sh-txt{{font-size:0.65rem!important;}}
+}}
+{_PEARL_CSS}
 </style>""", unsafe_allow_html=True)
 
 # ─── DATA LOADING ─────────────────────────────────────────────────────────────
@@ -476,7 +509,6 @@ MODULOS = [
     ("⚠️", "Diagnóstico de Riesgo"),
     ("📋", "Bandeja Operacional"),
     ("👥", "Seguimiento de Terceros"),
-    ("📅", "Reuniones"),
     ("📈", "Productividad"),
     ("⏱", "Consumo de Tiempo"),
 ]
@@ -536,29 +568,30 @@ with st.sidebar:
     st.markdown(
         '<div style="height:1px;background:rgba(255,255,255,0.05);margin:14px 0 10px;"></div>',
         unsafe_allow_html=True)
-    # Swatches visuales con color real
-    _sw_html = '<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.16em;color:#334155;text-transform:uppercase;margin-bottom:8px;">🎨 TEMA</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">'
+    # Swatches 1×3
+    _sw_html = ('<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.14em;'
+                'color:#52525B;text-transform:uppercase;margin-bottom:7px;">🎨 TEMA</div>'
+                '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px;">')
     for _tkey, _tcc in _THEMES.items():
-        _active = _tkey == _TK
-        _ring = f"box-shadow:0 0 0 2px rgba({_tcc['abr']},0.80);" if _active else ""
+        _asel = _tkey == _TK
+        _rng = f"box-shadow:0 0 0 2px rgba({_tcc['abr']},0.90),0 0 10px rgba({_tcc['abr']},0.25);" if _asel else "border:1px solid rgba(255,255,255,0.08);"
         _sw_html += (
-            f'<div style="border-radius:8px;overflow:hidden;cursor:pointer;{_ring}">'
-            f'<div style="background:{_tcc["bg_css"]};height:28px;display:flex;align-items:center;'
-            f'justify-content:center;font-size:1rem;">{_tcc["icon"]}</div>'
-            f'<div style="background:{_tcc["bg_sb"]};padding:3px 5px;font-size:0.48rem;'
-            f'font-weight:700;color:rgba({_tcc["abr"]},1);letter-spacing:0.04em;">'
-            f'{"✓ " if _active else ""}{_tcc["name"]}</div></div>'
+            f'<div style="border-radius:9px;overflow:hidden;{_rng}">'
+            f'<div style="background:{_tcc["bg_css"]};height:30px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:1.05rem;">{_tcc["icon"]}</div>'
+            f'<div style="background:{_tcc["bg_sb"]};padding:3px 0;text-align:center;'
+            f'font-size:0.46rem;font-weight:800;letter-spacing:0.06em;'
+            f'color:rgba({_tcc["abr"]},1);">{"✓ " if _asel else ""}{_tcc["name"].upper()}</div>'
+            f'</div>'
         )
     _sw_html += '</div>'
     st.markdown(_sw_html, unsafe_allow_html=True)
-    st.markdown('<div style="height:5px;"></div>', unsafe_allow_html=True)
-    _th_a, _th_b = st.columns(2)
+    _tha, _thb, _thc = st.columns(3)
     for _ti, (_tkey, _tcc) in enumerate(_THEMES.items()):
-        _col = _th_a if _ti % 2 == 0 else _th_b
-        _sel_mrk = "✓ " if _tkey == _TK else ""
+        _col = [_tha, _thb, _thc][_ti]
         with _col:
-            if st.button(f"{_sel_mrk}{_tcc['name']}", key=f"th_{_tkey}",
-                         use_container_width=True, help=_tcc['desc']):
+            if st.button(f"{'✓' if _tkey==_TK else _tcc['icon']}", key=f"th_{_tkey}",
+                         use_container_width=True, help=f"{_tcc['name']} — {_tcc['desc']}"):
                 st.session_state["theme"] = _tkey
                 st.rerun()
 
@@ -673,6 +706,13 @@ if mod == "Centro de Comando":
         try:
             _pts = ag_action_raw.strip().split(":", 2)
             _aty = _pts[0] if len(_pts) >= 2 else "complete"
+            # newform no tiene tid numérico — manejar antes del int()
+            if _aty == "newform":
+                _fn2 = _pts[1] if len(_pts) >= 2 else ""
+                _fv2 = _pts[2] if len(_pts) >= 3 else ""
+                st.session_state["add_task_defaults"] = {"field": _fn2, "value": _fv2}
+                st.session_state["_clr_action"] = True
+                st.rerun()
             _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
             _val = _pts[2] if len(_pts) >= 3 else ""
             st.session_state["_clr_action"] = True   # limpiar widget en PRÓXIMO rerun
@@ -705,21 +745,94 @@ if mod == "Centro de Comando":
 
     # ── Toggle de vistas ──────────────────────────────────────────────────────
     _CC_VIEWS = [
-        ("calendario", "📅 Calendario"),
+        ("calendario", "📅 Cal."),
         ("estado",     "🔷 Estado"),
-        ("prioridad",  "🎯 Prioridad"),
+        ("prioridad",  "🎯 Prio."),
         ("area",       "📁 Área"),
-        ("categoria",  "🗂 Categoría"),
+        ("categoria",  "🗂 Cat."),
+        ("vencidas",   "🚨 Vencidas"),
     ]
     if st.session_state.get("cc_view") not in {v for v, _ in _CC_VIEWS}:
         st.session_state["cc_view"] = "calendario"
-    _tv_cols = st.columns([2]*5 + [2])
+    _tv_cols = st.columns(len(_CC_VIEWS))
     for _vi, (_vk, _vl) in enumerate(_CC_VIEWS):
         with _tv_cols[_vi]:
             if st.button(_vl, key=f"btn_vw_{_vk}", use_container_width=True,
                          type="primary" if st.session_state["cc_view"]==_vk else "secondary"):
                 st.session_state["cc_view"] = _vk; st.rerun()
-    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+    # ── Formulario nueva tarea (abierto por "+" de kanban / calendario) ────────
+    _OPTS_EST_NT  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
+    _OPTS_PRIO_NT = ["Crítica","Alta","Media","Baja"]
+    _OPTS_TIPO_NT = ["Tarea","Seguimiento","Compromiso","Reunión"]
+    _OPTS_CAT_NT  = ["Planificación","Contratos","Compras","Reportes",
+                     "IA y Automatización","Gestión Corporativa","Reuniones","Salud","Personal"]
+    _OPTS_AREA_NT = ["Trabajo","Personal"]
+
+    if st.session_state.get("add_task_defaults") is not None:
+        _ntd    = st.session_state["add_task_defaults"]
+        _nt_fld = _ntd.get("field", "")
+        _nt_val = _ntd.get("value", "")
+        _def_est  = _nt_val if _nt_fld == "ESTADO"    else "Pendiente"
+        _def_prio = _nt_val if _nt_fld == "PRIORIDAD" else "Media"
+        _def_area = _nt_val if _nt_fld == "AREA"      else "Trabajo"
+        _def_cat  = _nt_val if _nt_fld == "CATEGORIA" else "Planificación"
+        try:
+            _def_date = pd.Timestamp(_nt_val).date() if _nt_fld == "date" and _nt_val else None
+        except Exception:
+            _def_date = None
+        seccion("➕", "NUEVA TAREA", C_CIAN)
+        with st.form("frm_add_task", border=False):
+            _nt1, _nt2, _nt3 = st.columns([3, 2, 2])
+            with _nt1:
+                _nt_tarea = st.text_input("Tarea *", placeholder="Nombre de la tarea...")
+                _nt_proj  = st.text_input("Proyecto", placeholder="Nombre del proyecto")
+            with _nt2:
+                _nt_tipo  = st.selectbox("Tipo", _OPTS_TIPO_NT)
+                _nt_area  = st.selectbox("Área", _OPTS_AREA_NT,
+                    index=_OPTS_AREA_NT.index(_def_area) if _def_area in _OPTS_AREA_NT else 0)
+            with _nt3:
+                _nt_prio  = st.selectbox("Prioridad", _OPTS_PRIO_NT,
+                    index=_OPTS_PRIO_NT.index(_def_prio) if _def_prio in _OPTS_PRIO_NT else 2)
+                _nt_cat   = st.selectbox("Categoría", _OPTS_CAT_NT,
+                    index=_OPTS_CAT_NT.index(_def_cat) if _def_cat in _OPTS_CAT_NT else 0)
+            _nt4, _nt5 = st.columns([2, 1])
+            with _nt4:
+                _nt_est   = st.selectbox("Estado", _OPTS_EST_NT,
+                    index=_OPTS_EST_NT.index(_def_est) if _def_est in _OPTS_EST_NT else 0)
+            with _nt5:
+                _nt_fecha = st.date_input("Fecha compromiso", value=_def_date)
+            _nt_desc = st.text_area("Descripción / Notas", height=60, placeholder="Detalle opcional...")
+            _ntb1, _ntb2 = st.columns(2)
+            with _ntb1: _nt_sub = st.form_submit_button("➕ Agregar",  use_container_width=True, type="primary")
+            with _ntb2: _nt_cls = st.form_submit_button("✕ Cancelar", use_container_width=True)
+        if _nt_cls:
+            st.session_state.pop("add_task_defaults", None); st.rerun()
+        if _nt_sub:
+            if not _nt_tarea.strip():
+                st.warning("⚠️ Ingresa el nombre de la tarea")
+            elif not _token():
+                st.error("GITHUB_TOKEN no configurado")
+            else:
+                _nid  = int(df_raw["ID"].max() or 0) + 1
+                _nrow = {"ID":_nid,"TAREA":_nt_tarea.strip(),"TIPO":_nt_tipo,
+                         "PROYECTO":_nt_proj.strip(),"AREA":_nt_area,"CATEGORIA":_nt_cat,
+                         "PRIORIDAD":_nt_prio,"ESTADO":_nt_est,
+                         "FECHA_COMPROMISO":pd.Timestamp(_nt_fecha) if _nt_fecha else pd.NaT,
+                         "FECHA_CREACION":pd.Timestamp(HOY),"FECHA_CIERRE":pd.NaT,
+                         "DESCRIPCION":_nt_desc,"NOTAS":"","COMENTARIOS":""}
+                _ndf = pd.concat([df_raw, pd.DataFrame([_nrow])], ignore_index=True)
+                for _c in ["FECHA_CREACION","FECHA_COMPROMISO","FECHA_CIERRE"]:
+                    if _c in _ndf.columns:
+                        _ndf[_c] = pd.to_datetime(_ndf[_c], errors="coerce").astype("datetime64[us]")
+                with st.spinner("Guardando..."):
+                    _ok2, _ms2 = guardar_github(_ndf)
+                if _ok2:
+                    st.session_state.pop("add_task_defaults", None)
+                    st.toast(f"✅ Tarea creada"); st.rerun()
+                else:
+                    st.error(_ms2)
 
     # ── Panel de detalle de tarea ──────────────────────────────────────────────
     if st.session_state.get("detalle_id") is not None:
@@ -859,7 +972,7 @@ if mod == "Centro de Comando":
         st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # VISTA CALENDARIO — 7 días interactivo, drag cross-column
+    # VISTA CALENDARIO — mismo formato que kanban, drag cross-day
     # ══════════════════════════════════════════════════════════════════════════
     if st.session_state["cc_view"] == "calendario":
         seccion("📅",
@@ -872,7 +985,6 @@ if mod == "Centro de Comando":
             (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=6))
         ]
         _DIAS_ES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
-        _CPICO   = {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"}
         _dcols_h = ""
         _mx_t    = 0
         for _i in range(7):
@@ -881,58 +993,81 @@ if mod == "Centro de Comando":
             _td    = _cal_ac[_cal_ac["FECHA_COMPROMISO"].dt.date == _d]
             if len(_td) > _mx_t: _mx_t = len(_td)
             _es_h  = (_i == 0)
-            _hc    = C_CIAN if _es_h else "#475569"
-            _nc    = "#F8FAFC" if _es_h else "#94A3B8"
-            _bc    = f"{C_CIAN}55" if _es_h else "#1E293B"
-            _dn    = _DIAS_ES[_d.weekday()]
+            _hc    = f"rgb({_ABR})" if _es_h else _TC["meta_clr"]
             _th    = ""
             for _, _t in _td.iterrows():
                 _ti2 = int(_t["ID"])
                 _dn2 = str(_t.get("ESTADO","")) == "Completada"
                 _p2  = str(_t.get("PRIORIDAD","Media"))
-                _c2  = PRIO_CLR.get(_p2, C_GRIS)
+                _pc2 = PRIO_CLR.get(_p2, C_GRIS)
                 _n2  = (str(_t.get("TAREA",""))
                         .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
+                _pj2 = str(_t.get("PROYECTO","") or "")[:18]
                 _ch2 = "checked" if _dn2 else ""
                 _s2  = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
                 _th += (
-                    f'<div class="tc" data-id="{_ti2}" style="border-color:{_c2}30;">'
-                    f'<input class="tc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
-                    f'<div class="tc-b">'
-                    f'<div style="font-size:0.50rem;font-weight:700;color:{_c2};">'
-                    f'{_CPICO.get(_p2,"")} {_p2}</div>'
-                    f'<div class="tc-nm" style="{_s2}">{_n2}</div>'
-                    f'</div></div>'
+                    f'<div class="kc" data-id="{_ti2}">'
+                    f'<div class="kc-top">'
+                    f'<span class="kc-dot" style="background:{_pc2};"></span>'
+                    f'<span class="kc-ico" style="color:{_pc2};">{PRIO_ICO.get(_p2,"")}</span>'
+                    f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
+                    f'</div>'
+                    f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
+                    + (f'<div class="kc-meta"><span class="kc-proj">{_pj2}</span></div>' if _pj2 else '')
+                    + f'</div>'
                 )
+            _add_btn = f'<button class="kk-add" data-field="date" data-group="{_d_str}" title="Agregar tarea">+</button>' if _token() else ''
             _dcols_h += (
-                f'<div class="dc {"today" if _es_h else ""}">'
-                f'<div class="dc-hdr" style="color:{_hc};">{_dn}</div>'
-                f'<div class="dc-num" style="color:{_nc};">{_d.day}</div>'
-                f'<div class="dz" data-date="{_d_str}" id="dz{_d_str}" '
-                f'style="border-color:{_bc};">{_th}</div></div>'
+                f'<div class="kk{"kk-today" if _es_h else ""}" '
+                f'style="border-top:3px solid {_hc}{"80" if not _es_h else ""};">'
+                f'<div class="kk-top">'
+                f'<div>'
+                f'<div class="kk-hdr" style="color:{_hc};">{_DIAS_ES[_d.weekday()]}</div>'
+                f'<div class="kk-num">{_d.day}</div>'
+                f'</div>'
+                f'{_add_btn}</div>'
+                f'<div class="kk-cnt">{len(_td)}</div>'
+                f'<div class="dz" data-date="{_d_str}" data-field="date" '
+                f'data-group="{_d_str}" id="dz{_d_str}">{_th}</div></div>'
             )
-        _cal_h   = max(380, 220 + _mx_t * 78)
+        _cal_h   = max(400, 240 + _mx_t * 90)
         _tok_ok2 = "true" if _token() else "false"
         components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
-.cal{{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:2px;}}
-.dc{{background:rgba(13,21,38,0.88);border:1px solid #1E293B;border-radius:14px;padding:12px 8px;}}
-.dc.today{{border-color:rgba(56,189,248,0.50);background:rgba(13,21,38,0.94);}}
-.dc-hdr{{font-size:0.52rem;font-weight:800;letter-spacing:0.10em;margin-bottom:2px;}}
-.dc-num{{font-size:1.40rem;font-weight:900;line-height:1;margin-bottom:10px;}}
-.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
-.dz.ov{{border-color:rgba(56,189,248,.35)!important;background:rgba(56,189,248,.04);}}
-.tc{{background:rgba(13,21,38,0.72);border:1px solid;border-radius:8px;padding:6px 6px;
-     margin-bottom:4px;cursor:grab;display:flex;align-items:flex-start;gap:5px;}}
-.tc:active{{cursor:grabbing;}}
-.sortable-ghost{{opacity:.22;transform:scale(.95);}}
-.sortable-chosen{{box-shadow:0 4px 18px rgba(56,189,248,.24);}}
-.tc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;margin-top:2px;}}
-.tc-b{{flex:1;min-width:0;}}
-.tc-nm{{font-size:0.65rem;font-weight:600;color:#CBD5E1;line-height:1.28;word-break:break-word;}}
+body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;
+     overflow-x:auto;overflow-y:hidden;}}
+.cal{{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:8px;
+     padding:2px;min-width:700px;}}
+.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};
+     border-radius:14px;padding:11px 9px;}}
+.kk-top{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}}
+.kk-hdr{{font-size:0.54rem;font-weight:800;letter-spacing:0.10em;}}
+.kk-num{{font-size:1.30rem;font-weight:900;line-height:1;color:{_TC['nm_clr']};}}
+.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;margin-bottom:8px;}}
+.kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);
+         border-radius:6px;color:{_TC['meta_clr']};cursor:pointer;font-size:1rem;
+         font-weight:700;line-height:1;padding:3px 7px;transition:all .15s;}}
+.kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);
+              color:rgb({_ABR});}}
+.dz{{min-height:48px;border-radius:9px;border:2px dashed transparent;
+    padding:3px;transition:all .18s;}}
+.dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
+.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};border-radius:9px;
+     padding:7px;margin-bottom:5px;cursor:grab;}}
+.kc:active{{cursor:grabbing;}}
+.kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:4px;}}
+.kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
+.kc-ico{{font-size:0.58rem;flex:1;}}
+.kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
+.kc-nm{{font-size:0.68rem;font-weight:600;color:{_TC['nm_clr']};
+        line-height:1.28;word-break:break-word;}}
+.kc-meta{{display:flex;gap:4px;margin-top:4px;}}
+.kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
+          border-radius:4px;padding:1px 4px;}}
+.sortable-ghost{{opacity:.20;transform:scale(.96);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
 <div class="cal">{_dcols_h}</div>
 <script>
@@ -957,11 +1092,17 @@ document.querySelectorAll('.dz').forEach(function(dz){{
     onLeave:function(evt){{evt.from.classList.remove('ov');}}
   }});
 }});
+document.querySelectorAll('.kk-add').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    if(HT)nfy('newform:date:'+this.dataset.group);
+  }});
+}});
 if(HT){{
-  document.querySelectorAll('.tc-chk').forEach(function(chk){{
+  document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
       var ns=this.checked?'Completada':'Pendiente';
-      var nm=this.closest('.tc').querySelector('.tc-nm');
+      var nm=this.closest('.kc').querySelector('.kc-nm');
       if(this.checked){{nm.style.textDecoration='line-through';nm.style.opacity='.38';}}
       else{{nm.style.textDecoration='';nm.style.opacity='';}}
       nfy('complete:'+this.dataset.id+':'+ns);
@@ -969,24 +1110,22 @@ if(HT){{
   }});
 }}
 var _dbc={{}};
-document.querySelectorAll('.tc').forEach(function(c){{
+document.querySelectorAll('.kc').forEach(function(c){{
   c.addEventListener('click',function(e){{
-    if(e.target.closest('.tc-chk'))return;
+    if(e.target.closest('.kc-chk'))return;
     var tid=this.dataset.id,now=Date.now();
-    if(_dbc[tid]&&(now-_dbc[tid])<380){{
-      _dbc[tid]=0;
-      nfy('open:'+tid+':');
-    }}else{{_dbc[tid]=now;}}
+    if(_dbc[tid]&&(now-_dbc[tid])<380){{_dbc[tid]=0;nfy('open:'+tid+':');}}
+    else{{_dbc[tid]=now;}}
   }});
 }});
-</script></body></html>""", height=_cal_h, scrolling=False)
-        st.stop()   # no renderizar sección agenda debajo
+</script></body></html>""", height=_cal_h, scrolling=True)
+        st.stop()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # VISTAS KANBAN (Estado / Prioridad / Área / Categoría)
+    # VISTAS KANBAN (Estado / Prioridad / Área / Categoría / Vencidas)
     # ══════════════════════════════════════════════════════════════════════════
     _cv = st.session_state["cc_view"]
-    if _cv in ("estado","prioridad","area","categoria"):
+    if _cv in ("estado","prioridad","area","categoria","vencidas"):
 
         _KB_CFG = {
             "estado": {
@@ -1014,14 +1153,20 @@ document.querySelectorAll('.tc').forEach(function(c){{
                 "groups": ["Planificación","Contratos","Compras","Reportes",
                            "IA y Automatización","Gestión Corporativa",
                            "Reuniones","Salud","Personal"],
-                "colors": {g:C_CIAN for g in ["Planificación","Contratos","Compras",
-                                               "Reportes","IA y Automatización",
-                                               "Gestión Corporativa","Reuniones",
-                                               "Salud","Personal"]},
+                "colors": {g:CAT_CLR.get(g,C_CIAN) for g in
+                           ["Planificación","Contratos","Compras","Reportes",
+                            "IA y Automatización","Gestión Corporativa",
+                            "Reuniones","Salud","Personal"]},
                 "icons":  {"Planificación":"📐","Contratos":"📝","Compras":"🛒",
                            "Reportes":"📊","IA y Automatización":"🤖",
                            "Gestión Corporativa":"🏢","Reuniones":"📅",
                            "Salud":"❤️","Personal":"🏠"},
+            },
+            "vencidas": {
+                "field":  "PRIORIDAD",
+                "groups": ["Crítica","Alta","Media","Baja"],
+                "colors": {"Crítica":C_CRITICO,"Alta":C_ALERTA,"Media":C_CIAN,"Baja":C_GRIS},
+                "icons":  {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"},
             },
         }
 
@@ -1031,17 +1176,26 @@ document.querySelectorAll('.tc').forEach(function(c){{
         _kcolors = _cfg["colors"]
         _kicons  = _cfg["icons"]
 
-        # Para estado usamos df_raw sin Cancelada; resto solo activas
-        _kac = (df_raw[~df_raw["ESTADO"].isin(["Cancelada"])]
-                if _cv == "estado" else ac)
+        # Dataset: vencidas = solo atrasadas activas; estado = sin Cancelada; resto = activas
+        if _cv == "vencidas":
+            _kac = ac[ac["FECHA_COMPROMISO"].notna() &
+                      (ac["FECHA_COMPROMISO"] < HOY_TS)]
+        elif _cv == "estado":
+            _kac = df_raw[~df_raw["ESTADO"].isin(["Cancelada"])]
+        else:
+            _kac = ac
 
-        seccion("📋", f"KANBAN POR {_kfield}", C_CIAN)
+        _sect_ico = {"estado":"🔷","prioridad":"🎯","area":"📁",
+                     "categoria":"🗂","vencidas":"🚨"}
+        seccion(_sect_ico.get(_cv,"📋"), f"KANBAN · {_cv.upper()}", C_CIAN)
 
         # ── Construir columnas ────────────────────────────────────────────────
         _kn      = len(_kgroups)
-        _grid_tc = f"repeat({_kn},1fr)" if _kn <= 5 else "repeat(auto-fill,minmax(200px,1fr))"
+        _min_col = 160 if _kn > 5 else 180
+        _grid_tc = f"repeat({_kn},minmax({_min_col}px,1fr))"
         _mx_t    = 0
         _dcols_h = ""
+        _tok_add = _token()
         for _gval in _kgroups:
             _gdf = _kac[_kac[_kfield].fillna("") == _gval]
             if len(_gdf) > _mx_t: _mx_t = len(_gdf)
@@ -1054,13 +1208,18 @@ document.querySelectorAll('.tc').forEach(function(c){{
                 _dn2 = str(_t.get("ESTADO","")) == "Completada"
                 _nm2 = (str(_t.get("TAREA",""))
                         .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
-                _pj2 = str(_t.get("PROYECTO","") or "")[:22]
+                _pj2 = str(_t.get("PROYECTO","") or "")[:20]
                 _fc2 = _t.get("FECHA_COMPROMISO")
                 _fs2 = pd.Timestamp(_fc2).strftime("%d/%m") if pd.notna(_fc2) else ""
                 _pr2 = str(_t.get("PRIORIDAD","Media"))
                 _pc3 = PRIO_CLR.get(_pr2, C_GRIS)
                 _ch3 = "checked" if _dn2 else ""
                 _sy3 = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
+                # Para vista vencidas: mostrar días de retraso
+                _delay = ""
+                if _cv == "vencidas" and pd.notna(_fc2):
+                    _days = (HOY_TS - pd.Timestamp(_fc2)).days
+                    _delay = f'<span class="kc-delay">−{_days}d</span>'
                 _th2 += (
                     f'<div class="kc" data-id="{_ti2}">'
                     f'<div class="kc-top">'
@@ -1072,43 +1231,64 @@ document.querySelectorAll('.tc').forEach(function(c){{
                     f'<div class="kc-meta">'
                     + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
                     + (f'<span class="kc-fc">{_fs2}</span>' if _fs2 else '')
+                    + _delay
                     + f'</div></div>'
                 )
+            _add_btn = (f'<button class="kk-add" data-field="{_kfield}" '
+                        f'data-group="{_gval}" title="Nueva tarea">+</button>'
+                        if _tok_add and _cv != "vencidas" else "")
             _dcols_h += (
-                f'<div class="kk" style="border-top:3px solid {_gc2}45;">'
+                f'<div class="kk" style="border-top:3px solid {_gc2}55;">'
+                f'<div class="kk-top">'
                 f'<div class="kk-hdr" style="color:{_gc2};">{_gi} {_gval}</div>'
+                f'{_add_btn}</div>'
                 f'<div class="kk-cnt">{len(_gdf)} tareas</div>'
                 f'<div class="dz" data-field="{_kfield}" data-group="{_gval}" '
                 f'id="dz-{_sg}">{_th2}</div></div>'
             )
 
-        _kh     = max(440, 260 + _mx_t * 90)
-        _tokk   = "true" if _token() else "false"
+        _kh   = max(440, 260 + _mx_t * 92)
+        _tokk = "true" if _token() else "false"
         components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
-.kb{{display:grid;grid-template-columns:{_grid_tc};gap:10px;padding:2px;}}
-.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};border-radius:14px;padding:12px 9px;}}
-.kk-hdr{{font-size:0.70rem;font-weight:900;letter-spacing:0.06em;margin-bottom:2px;}}
-.kk-cnt{{font-size:0.50rem;color:#334155;font-weight:700;margin-bottom:10px;}}
-.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
-.dz.ov{{border-color:rgba({_ABR},.35)!important;background:rgba({_ABR},.04);}}
-.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};border-radius:9px;
-     padding:8px;margin-bottom:5px;cursor:grab;}}
+body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;
+     overflow-x:auto;overflow-y:hidden;}}
+.kb{{display:grid;grid-template-columns:{_grid_tc};gap:10px;padding:2px;
+    min-width:{max(600, _kn*170)}px;}}
+.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};
+     border-radius:14px;padding:11px 9px;}}
+.kk-top{{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}}
+.kk-hdr{{font-size:0.68rem;font-weight:900;letter-spacing:0.06em;}}
+.kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);
+         border-radius:6px;color:{_TC['meta_clr']};cursor:pointer;
+         font-size:1rem;font-weight:700;line-height:1;padding:2px 7px;
+         transition:all .15s;}}
+.kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);
+              color:rgb({_ABR});}}
+.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;
+         margin-bottom:9px;}}
+.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;
+    padding:3px;transition:all .18s;}}
+.dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
+.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};
+     border-radius:9px;padding:8px;margin-bottom:5px;cursor:grab;}}
 .kc:active{{cursor:grabbing;}}
 .kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:5px;}}
 .kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
-.kc-ico{{font-size:0.60rem;flex:1;}}
+.kc-ico{{font-size:0.58rem;flex:1;}}
 .kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
-.kc-nm{{font-size:0.71rem;font-weight:600;color:#CBD5E1;line-height:1.3;word-break:break-word;}}
-.kc-meta{{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;}}
-.kc-proj{{font-size:0.54rem;color:#475569;background:rgba({_ABR},0.08);
-          border-radius:4px;padding:1px 5px;}}
-.kc-fc{{font-size:0.54rem;color:#64748B;}}
-.sortable-ghost{{opacity:.20;transform:scale(.95);}}
-.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
+.kc-nm{{font-size:0.70rem;font-weight:600;color:{_TC['nm_clr']};
+        line-height:1.3;word-break:break-word;}}
+.kc-meta{{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}}
+.kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
+          border-radius:4px;padding:1px 4px;}}
+.kc-fc{{font-size:0.52rem;color:{_TC['meta_clr']};}}
+.kc-delay{{font-size:0.52rem;color:#FF4757;font-weight:700;
+           background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
+.sortable-ghost{{opacity:.18;transform:scale(.94);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
 </style></head><body>
 <div class="kb">{_dcols_h}</div>
 <script>
@@ -1135,6 +1315,12 @@ document.querySelectorAll('.dz').forEach(function(dz){{
     onLeave:function(evt){{evt.from.classList.remove('ov');}}
   }});
 }});
+document.querySelectorAll('.kk-add').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    if(HT)nfy('newform:'+this.dataset.field+':'+this.dataset.group);
+  }});
+}});
 if(HT){{
   document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
@@ -1155,10 +1341,10 @@ document.querySelectorAll('.kc').forEach(function(c){{
     else{{_dbt[tid]=now;}}
   }});
 }});
-</script></body></html>""", height=_kh, scrolling=False)
+</script></body></html>""", height=_kh, scrolling=True)
         st.stop()
 
-    # fallback → no hay otra vista debajo
+    # fallback (vista no reconocida)
     col_ag, col_prox = st.columns([3, 2])
 
     # ── Agenda del Día ────────────────────────────────────────────────────────
@@ -1828,77 +2014,7 @@ elif mod == "Seguimiento de Terceros":
                 st.dataframe(df_tt.fillna("—"), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MÓDULO 5: REUNIONES Y COMPROMISOS
-# ══════════════════════════════════════════════════════════════════════════════
-elif mod == "Reuniones":
-    st.markdown(
-        f'<div style="background:linear-gradient(100deg,rgba(16,185,129,0.06),transparent);'
-        f'border:1px solid rgba(16,185,129,0.14);border-radius:20px;padding:16px 24px;margin-bottom:18px;">'
-        f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.24em;color:{C_VERDE2};">COMPROMISOS Y ACTAS</div>'
-        f'<div style="font-size:1.65rem;font-weight:900;color:#F8FAFC;">📅 REUNIONES Y COMPROMISOS</div>'
-        f'</div>', unsafe_allow_html=True)
-
-    if df_reu.empty:
-        st.warning("No se encontró la hoja REUNIONES. Regenera con crear_excel_v2.py")
-    else:
-        prox_r = df_reu[
-            (df_reu["ESTADO"] != "Realizada") &
-            df_reu["FECHA"].notna() &
-            (df_reu["FECHA"] >= HOY_TS)
-        ] if "FECHA" in df_reu.columns else pd.DataFrame()
-        comp_pend = df_reu[df_reu.get("ESTADO_COMP","") == "Pendiente"] \
-            if "ESTADO_COMP" in df_reu.columns else pd.DataFrame()
-        comp_proc = df_reu[df_reu.get("ESTADO_COMP","") == "En Proceso"] \
-            if "ESTADO_COMP" in df_reu.columns else pd.DataFrame()
-
-        c1,c2,c3 = st.columns(3)
-        with c1: st.markdown(kpi("REUNIONES PRÓXIMAS", len(prox_r), color=C_VERDE2),  unsafe_allow_html=True)
-        with c2: st.markdown(kpi("COMPROMISOS PENDIENTES", len(comp_pend),
-                                  color=C_ALERTA if len(comp_pend) else C_GRIS),       unsafe_allow_html=True)
-        with c3: st.markdown(kpi("EN PROCESO", len(comp_proc), color=C_CIAN),          unsafe_allow_html=True)
-
-        st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
-        seccion("📅", "AGENDA DE REUNIONES", C_VERDE2)
-
-        cards_r = ""
-        df_reu_s = df_reu.sort_values("FECHA") if "FECHA" in df_reu.columns else df_reu
-        for _, r in df_reu_s.iterrows():
-            ft   = r.get("FECHA")
-            flab = ft.strftime("%d/%m/%Y") if pd.notna(ft) else "—"
-            est  = str(r.get("ESTADO","Pendiente"))
-            ec_  = C_OK if est == "Realizada" else C_ALERTA
-            tipo = str(r.get("TIPO",""))
-            fc   = r.get("FECHA_COMP")
-            ecmp = str(r.get("ESTADO_COMP",""))
-            ecmp_clr = C_OK if ecmp == "Completada" else C_ALERTA if ecmp == "En Proceso" else C_GRIS
-            comprm = str(r.get("COMPROMISO",""))
-            resp   = str(r.get("RESPONSABLE_COMP",""))
-            cards_r += (
-                f'<div style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.12);'
-                f'border-radius:14px;padding:16px;margin-bottom:10px;">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-                f'<div style="font-size:0.90rem;font-weight:800;color:#F1F5F9;">'
-                f'📅 {str(r.get("TITULO",""))}</div>'
-                f'<div>{chip(flab, C_VERDE2)}{chip(tipo, C_INDIGO)}'
-                f'<span style="font-size:0.55rem;font-weight:700;color:{ec_};margin-left:6px;">{est}</span></div>'
-                f'</div>'
-                f'<div style="font-size:0.72rem;color:#94A3B8;margin-bottom:6px;">'
-                f'<b style="color:#CBD5E1;">Participantes:</b> {str(r.get("PARTICIPANTES",""))}</div>'
-                f'<div style="background:rgba(0,0,0,0.20);border-radius:8px;padding:10px;margin-top:8px;">'
-                f'<div style="font-size:0.55rem;font-weight:800;letter-spacing:0.10em;'
-                f'color:#334155;text-transform:uppercase;margin-bottom:4px;">COMPROMISOS</div>'
-                f'<div style="font-size:0.72rem;color:#CBD5E1;">{comprm}</div>'
-                f'<div style="font-size:0.62rem;margin-top:6px;">'
-                f'{chip(f"Resp: {resp}", C_CIAN)}'
-                f'<span style="font-size:0.58rem;color:{ecmp_clr};margin-left:8px;font-weight:700;">'
-                f'{ecmp}</span>'
-                f'{" · " + fc.strftime("%d/%m") if pd.notna(fc) else ""}'
-                f'</div></div></div>'
-            )
-        st.markdown(cards_r, unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MÓDULO 6: PRODUCTIVIDAD
+# MÓDULO 5: PRODUCTIVIDAD
 # ══════════════════════════════════════════════════════════════════════════════
 elif mod == "Productividad":
     st.markdown(
