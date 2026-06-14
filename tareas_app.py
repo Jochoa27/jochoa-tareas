@@ -110,6 +110,48 @@ hr{border:none;border-top:1px solid rgba(56,189,248,0.08);margin:12px 0;}
 .scroll-box{overflow-y:auto;max-height:380px;padding-right:4px;}
 </style>""", unsafe_allow_html=True)
 
+# ─── TEMAS DE COLOR ───────────────────────────────────────────────────────────
+_THEMES = {
+    "abismo":  {
+        "name":"Abismo",  "icon":"🌑", "desc":"Azul marino profundo",
+        "bg1":"#060B15","bg_sb":"#05090F","bg2":"#08101F","bg3":"#0D1830",
+        "card1":"rgba(13,21,38,0.88)","card2":"rgba(13,21,38,0.72)",
+        "border":"#1E293B","abr":"56,189,248",
+    },
+    "grafito": {
+        "name":"Grafito", "icon":"🌫️","desc":"Carbón obsidiana",
+        "bg1":"#0D0F14","bg_sb":"#0A0C10","bg2":"#14161D","bg3":"#1E2030",
+        "card1":"rgba(22,24,30,0.88)","card2":"rgba(22,24,30,0.72)",
+        "border":"#2D2F3E","abr":"56,189,248",
+    },
+    "cosmos":  {
+        "name":"Cosmos",  "icon":"🌌","desc":"Violeta sideral",
+        "bg1":"#08041E","bg_sb":"#060218","bg2":"#100830","bg3":"#1A1050",
+        "card1":"rgba(16,10,40,0.88)","card2":"rgba(16,10,40,0.72)",
+        "border":"#1E1840","abr":"168,85,247",
+    },
+    "abeto":   {
+        "name":"Abeto",   "icon":"🌲","desc":"Verde bosque oscuro",
+        "bg1":"#041412","bg_sb":"#030E0C","bg2":"#081E1A","bg3":"#0F2E28",
+        "card1":"rgba(8,28,24,0.88)","card2":"rgba(8,28,24,0.72)",
+        "border":"#0D2828","abr":"35,209,96",
+    },
+}
+
+_TK   = st.session_state.get("theme", "abismo")
+_TC   = _THEMES.get(_TK, _THEMES["abismo"])
+C_BG  = _TC["bg1"]
+C_BG2 = _TC["bg2"]
+C_BG3 = _TC["bg3"]
+_ABR  = _TC["abr"]
+
+# CSS dinámico: sobreescribe fondos del bloque estático según tema
+st.markdown(f"""<style>
+[data-testid="stAppViewContainer"]{{background:{C_BG};}}
+[data-testid="stSidebar"]{{background:{_TC['bg_sb']};
+    border-right:1px solid rgba({_ABR},0.10);}}
+</style>""", unsafe_allow_html=True)
+
 # ─── DATA LOADING ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30)
 def cargar(mtime):
@@ -469,6 +511,22 @@ with st.sidebar:
         f'<div style="font-size:0.48rem;color:#334155;margin-top:8px;">'
         f'{HOY.strftime("%A %d de %B")}</div>'
         f'</div>', unsafe_allow_html=True)
+
+    # ── Selector de tema ──────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="height:1px;background:rgba(255,255,255,0.05);margin:14px 0 10px;"></div>'
+        '<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.16em;'
+        'color:#334155;text-transform:uppercase;margin-bottom:8px;">🎨 TEMA DE FONDO</div>',
+        unsafe_allow_html=True)
+    _th_a, _th_b = st.columns(2)
+    for _ti, (_tkey, _tcc) in enumerate(_THEMES.items()):
+        _col = _th_a if _ti % 2 == 0 else _th_b
+        _sel_mrk = "✓ " if _tkey == _TK else ""
+        with _col:
+            if st.button(f"{_sel_mrk}{_tcc['icon']} {_tcc['name']}", key=f"th_{_tkey}",
+                         use_container_width=True, help=_tcc['desc']):
+                st.session_state["theme"] = _tkey
+                st.rerun()
 
     # Aviso de token
     if not _token():
@@ -998,12 +1056,12 @@ document.querySelectorAll('.tc').forEach(function(c){{
 *{{box-sizing:border-box;margin:0;padding:0;}}
 body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
 .kb{{display:grid;grid-template-columns:{_grid_tc};gap:10px;padding:2px;}}
-.kk{{background:rgba(13,21,38,0.88);border:1px solid #1E293B;border-radius:14px;padding:12px 9px;}}
+.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};border-radius:14px;padding:12px 9px;}}
 .kk-hdr{{font-size:0.70rem;font-weight:900;letter-spacing:0.06em;margin-bottom:2px;}}
 .kk-cnt{{font-size:0.50rem;color:#334155;font-weight:700;margin-bottom:10px;}}
 .dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
-.dz.ov{{border-color:rgba(56,189,248,.35)!important;background:rgba(56,189,248,.04);}}
-.kc{{background:rgba(13,21,38,0.72);border:1px solid #1E293B;border-radius:9px;
+.dz.ov{{border-color:rgba({_ABR},.35)!important;background:rgba({_ABR},.04);}}
+.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};border-radius:9px;
      padding:8px;margin-bottom:5px;cursor:grab;}}
 .kc:active{{cursor:grabbing;}}
 .kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:5px;}}
@@ -1012,11 +1070,11 @@ body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;ove
 .kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
 .kc-nm{{font-size:0.71rem;font-weight:600;color:#CBD5E1;line-height:1.3;word-break:break-word;}}
 .kc-meta{{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;}}
-.kc-proj{{font-size:0.54rem;color:#475569;background:rgba(56,189,248,0.08);
+.kc-proj{{font-size:0.54rem;color:#475569;background:rgba({_ABR},0.08);
           border-radius:4px;padding:1px 5px;}}
 .kc-fc{{font-size:0.54rem;color:#64748B;}}
 .sortable-ghost{{opacity:.20;transform:scale(.95);}}
-.sortable-chosen{{box-shadow:0 4px 18px rgba(56,189,248,.24);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
 <div class="kb">{_dcols_h}</div>
 <script>
