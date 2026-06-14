@@ -572,27 +572,31 @@ if mod == "Centro de Comando":
         '{display:none!important;}</style>', unsafe_allow_html=True)
 
     # ── Procesar acciones (compartido) ────────────────────────────────────────
-    if ag_action_raw.strip() and _token():
+    if ag_action_raw.strip():
         try:
             _pts = ag_action_raw.strip().split(":", 2)
-            _aty = _pts[0] if len(_pts) == 3 else "complete"
-            _tid = int(_pts[1] if len(_pts) == 3 else _pts[0])
-            _val = _pts[2] if len(_pts) == 3 else (_pts[1] if len(_pts) > 1 else "")
+            _aty = _pts[0] if len(_pts) >= 2 else "complete"
+            _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
+            _val = _pts[2] if len(_pts) >= 3 else ""
             st.session_state["ag_task_action"] = ""
-            _dfc = df_raw.copy()
-            _mk  = _dfc["ID"] == _tid
-            if _aty == "date":
-                _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val)
-            else:
-                _dfc.loc[_mk, "ESTADO"] = _val
-                _dfc.loc[_mk, "FECHA_CIERRE"] = (
-                    pd.Timestamp(HOY) if _val == "Completada" else pd.NaT)
-            with st.spinner("Guardando..."):
-                _ok, _ms = guardar_github(_dfc)
-            if _ok:
-                st.toast("✅ Guardado"); st.rerun()
-            else:
-                st.error(_ms)
+            if _aty == "open":
+                st.session_state["detalle_id"] = _tid
+                st.rerun()
+            elif _token():
+                _dfc = df_raw.copy()
+                _mk  = _dfc["ID"] == _tid
+                if _aty == "date":
+                    _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val)
+                else:
+                    _dfc.loc[_mk, "ESTADO"] = _val
+                    _dfc.loc[_mk, "FECHA_CIERRE"] = (
+                        pd.Timestamp(HOY) if _val == "Completada" else pd.NaT)
+                with st.spinner("Guardando..."):
+                    _ok, _ms = guardar_github(_dfc)
+                if _ok:
+                    st.toast("✅ Guardado"); st.rerun()
+                else:
+                    st.error(_ms)
         except Exception:
             st.session_state["ag_task_action"] = ""
 
@@ -609,6 +613,143 @@ if mod == "Centro de Comando":
                      type="primary" if st.session_state["cc_view"]=="calendario" else "secondary"):
             st.session_state["cc_view"] = "calendario"; st.rerun()
     st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
+    # ── Panel de detalle de tarea ──────────────────────────────────────────────
+    if st.session_state.get("detalle_id") is not None:
+        _dt_id = st.session_state["detalle_id"]
+        _dt_df = df_raw[df_raw["ID"] == _dt_id]
+        if _dt_df.empty:
+            st.session_state["detalle_id"] = None
+        else:
+            _r = _dt_df.iloc[0]
+            _OPTS_EST2  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
+            _OPTS_PRIO2 = ["Crítica","Alta","Media","Baja"]
+            _OPTS_TIPO2 = ["Tarea","Seguimiento","Compromiso","Reunión"]
+            _OPTS_CAT2  = ["Planificación","Contratos","Compras","Reportes",
+                           "IA y Automatización","Gestión Corporativa","Reuniones","Salud","Personal"]
+            _OPTS_AREA2 = ["Trabajo","Personal"]
+            def _si(lst, v, d=0):
+                try: return lst.index(str(v))
+                except: return d
+
+            st.markdown(
+                f'<div style="background:rgba(13,21,38,0.96);border:1px solid {C_CIAN}35;'
+                f'border-radius:16px;padding:14px 20px 4px;margin-bottom:6px;">'
+                f'<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.24em;'
+                f'color:{C_CIAN};">DETALLE DE TAREA · ID {_dt_id}</div>'
+                f'<div style="font-size:1.05rem;font-weight:900;color:#F8FAFC;margin-top:2px;">'
+                f'{_r.get("TAREA","")}</div></div>',
+                unsafe_allow_html=True)
+
+            with st.form("frm_det", border=False):
+                _fa, _fb, _fc = st.columns(3)
+                with _fa:
+                    _new_tarea = st.text_input("Nombre de la tarea",
+                                               value=str(_r.get("TAREA","") or ""))
+                    _new_est   = st.selectbox("Estado",    _OPTS_EST2,
+                                              index=_si(_OPTS_EST2, _r.get("ESTADO","Pendiente")))
+                    _new_prio  = st.selectbox("Prioridad", _OPTS_PRIO2,
+                                              index=_si(_OPTS_PRIO2, _r.get("PRIORIDAD","Media")))
+                    _new_tipo  = st.selectbox("Tipo",      _OPTS_TIPO2,
+                                              index=_si(_OPTS_TIPO2, _r.get("TIPO","Tarea")))
+                with _fb:
+                    _new_proj = st.text_input("Proyecto",
+                                              value=str(_r.get("PROYECTO","") or ""))
+                    _new_area = st.selectbox("Área",      _OPTS_AREA2,
+                                             index=_si(_OPTS_AREA2, _r.get("AREA","Trabajo")))
+                    _new_cat  = st.selectbox("Categoría", _OPTS_CAT2,
+                                             index=_si(_OPTS_CAT2,  _r.get("CATEGORIA","Planificación")))
+                    _new_ter  = st.text_input("Tercero",
+                                              value=str(_r.get("TERCERO","") or ""))
+                with _fc:
+                    _fc_raw  = _r.get("FECHA_COMPROMISO")
+                    _fc_date = pd.Timestamp(_fc_raw).date() if pd.notna(_fc_raw) else None
+                    _new_fc  = st.date_input("Fecha de vencimiento",
+                                             value=_fc_date, format="DD/MM/YYYY")
+                    _new_imp = st.number_input("Impacto (1-5)",  min_value=1, max_value=5, step=1,
+                                               value=int(_r.get("IMPACTO",3) or 3))
+                    _new_urg = st.number_input("Urgencia (1-5)", min_value=1, max_value=5, step=1,
+                                               value=int(_r.get("URGENCIA",3) or 3))
+                    _new_esf = st.number_input("Esfuerzo (hrs)", min_value=0.0, step=0.5,
+                                               format="%.1f",
+                                               value=float(_r.get("ESFUERZO_HRS",0) or 0))
+
+                _new_notas = st.text_area("Descripción / Notas",
+                                          value=str(_r.get("NOTAS","") or ""), height=88)
+
+                st.markdown(
+                    f'<div style="font-size:0.52rem;font-weight:800;letter-spacing:0.18em;'
+                    f'color:{C_CIAN};margin:10px 0 4px;">COMENTARIOS</div>',
+                    unsafe_allow_html=True)
+                _cmt_prev = str(_r.get("COMENTARIOS","") or "") \
+                            if "COMENTARIOS" in df_raw.columns else ""
+                if _cmt_prev:
+                    _lines_html = "".join(
+                        f'<div style="font-size:0.70rem;color:#94A3B8;padding:5px 0;'
+                        f'border-bottom:1px solid #1E293B;">{ln}</div>'
+                        for ln in _cmt_prev.strip().split("\n") if ln.strip()
+                    )
+                    st.markdown(
+                        f'<div style="background:rgba(6,11,21,0.6);border:1px solid #1E293B;'
+                        f'border-radius:8px;padding:8px 12px;margin-bottom:8px;max-height:130px;'
+                        f'overflow-y:auto;">{_lines_html}</div>',
+                        unsafe_allow_html=True)
+                _new_cmt = st.text_area("Nuevo comentario",
+                                        placeholder="Escribe un comentario y guarda...",
+                                        height=68, label_visibility="collapsed",
+                                        key="det_cmt_input")
+
+                _sb1, _sb2 = st.columns([3, 2])
+                with _sb1:
+                    _guardar_d = st.form_submit_button(
+                        "💾 Guardar cambios", type="primary",
+                        use_container_width=True, disabled=not _token())
+                with _sb2:
+                    _cerrar_d = st.form_submit_button(
+                        "✕ Cerrar", use_container_width=True)
+
+            if _guardar_d and _token():
+                _dfc2 = df_raw.copy()
+                if "COMENTARIOS" not in _dfc2.columns:
+                    _dfc2["COMENTARIOS"] = ""
+                _mk2 = _dfc2["ID"] == _dt_id
+                _dfc2.loc[_mk2, "TAREA"]            = _new_tarea
+                _dfc2.loc[_mk2, "ESTADO"]           = _new_est
+                _dfc2.loc[_mk2, "PRIORIDAD"]        = _new_prio
+                _dfc2.loc[_mk2, "TIPO"]             = _new_tipo
+                _dfc2.loc[_mk2, "PROYECTO"]         = _new_proj
+                _dfc2.loc[_mk2, "AREA"]             = _new_area
+                _dfc2.loc[_mk2, "CATEGORIA"]        = _new_cat
+                _dfc2.loc[_mk2, "TERCERO"]          = _new_ter
+                _dfc2.loc[_mk2, "FECHA_COMPROMISO"] = (
+                    pd.Timestamp(_new_fc) if _new_fc else pd.NaT)
+                _dfc2.loc[_mk2, "IMPACTO"]          = _new_imp
+                _dfc2.loc[_mk2, "URGENCIA"]         = _new_urg
+                _dfc2.loc[_mk2, "ESFUERZO_HRS"]     = _new_esf
+                _dfc2.loc[_mk2, "NOTAS"]            = _new_notas
+                if _new_est == "Completada":
+                    _cierre_prev = _dfc2.loc[_mk2, "FECHA_CIERRE"].values[0]
+                    if pd.isna(_cierre_prev):
+                        _dfc2.loc[_mk2, "FECHA_CIERRE"] = pd.Timestamp(HOY)
+                if _new_cmt.strip():
+                    _ts_c  = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
+                    _p_cmt = str(_dfc2.loc[_mk2, "COMENTARIOS"].values[0] or "")
+                    _blq   = f"[{_ts_c}] {_new_cmt.strip()}"
+                    _dfc2.loc[_mk2, "COMENTARIOS"] = (
+                        _blq + ("\n" + _p_cmt if _p_cmt else "")).strip()
+                with st.spinner("Guardando..."):
+                    _ok_d, _ms_d = guardar_github(_dfc2)
+                if _ok_d:
+                    st.session_state["detalle_id"] = None
+                    st.toast("✅ Guardado"); st.rerun()
+                else:
+                    st.error(_ms_d)
+
+            if _cerrar_d:
+                st.session_state["detalle_id"] = None
+                st.rerun()
+
+        st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # VISTA CALENDARIO — 7 días interactivo, drag cross-column
@@ -716,6 +857,12 @@ if(HT){{
     }});
   }});
 }}
+document.querySelectorAll('.tc').forEach(function(c){{
+  c.addEventListener('dblclick',function(e){{
+    e.preventDefault();
+    nfy('open:'+this.dataset.id+':');
+  }});
+}});
 </script></body></html>""", height=_cal_h, scrolling=False)
         st.stop()   # no renderizar sección agenda debajo
 
@@ -857,6 +1004,12 @@ if(hasToken){{
     }});
   }});
 }}
+document.querySelectorAll('.sc').forEach(function(c){{
+  c.addEventListener('dblclick',function(e){{
+    e.preventDefault();
+    notify('action','open:'+this.dataset.id+':');
+  }});
+}});
 </script></body></html>""", height=comp_h, scrolling=False)
 
     # ── Próximos 7 días (lista compacta) ─────────────────────────────────────
