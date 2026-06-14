@@ -303,26 +303,50 @@ def _marcar_estado(task_id, nuevo_estado):
         st.error(msg)
 
 def _merge_edits(df_original, df_edited):
-    """Fusiona las filas editadas de vuelta al DataFrame completo."""
+    """Fusiona filas editadas al DataFrame completo usando update() por índice ID."""
     df_result = df_original.copy()
-    for _, row in df_edited.iterrows():
-        rid = row.get("ID")
-        if pd.notna(rid):
-            mask = df_result["ID"] == rid
-            for col in row.index:
-                if col in df_result.columns:
-                    df_result.loc[mask, col] = row[col]
-        else:
-            # Fila nueva
-            new = row.to_frame().T.copy()
-            new["ID"] = int(df_result["ID"].max() or 0) + 1
-            if "FECHA_CREACION" not in new.columns or pd.isna(new["FECHA_CREACION"].values[0]):
-                new["FECHA_CREACION"] = pd.Timestamp(HOY)
-            if "ESTADO" not in new.columns or str(new["ESTADO"].values[0]) == "nan":
-                new["ESTADO"] = "Pendiente"
-            if "PRIORIDAD" not in new.columns or str(new["PRIORIDAD"].values[0]) == "nan":
-                new["PRIORIDAD"] = "Media"
-            df_result = pd.concat([df_result, new], ignore_index=True)
+    df_ed     = df_edited.copy()
+
+    # Normalizar tipos para compatibilidad con df_result
+    for c in ["FECHA_COMPROMISO", "FECHA_CIERRE", "FECHA_CREACION"]:
+        if c in df_ed.columns:
+            df_ed[c] = pd.to_datetime(df_ed[c], errors="coerce").astype("datetime64[us]")
+    for c in ["ID", "IMPACTO", "URGENCIA"]:
+        if c in df_ed.columns:
+            df_ed[c] = pd.to_numeric(df_ed[c], errors="coerce")
+    if "ESFUERZO_HRS" in df_ed.columns:
+        df_ed["ESFUERZO_HRS"] = pd.to_numeric(df_ed["ESFUERZO_HRS"], errors="coerce")
+
+    existing = df_ed[df_ed["ID"].notna()].copy()
+    new_rows = df_ed[df_ed["ID"].isna()].copy()
+
+    # Actualizar filas existentes vía update() alineado por ID
+    if not existing.empty:
+        df_result = df_result.set_index("ID")
+        existing  = existing.set_index("ID")
+        cols_upd  = [c for c in existing.columns if c in df_result.columns]
+        df_result.update(existing[cols_upd])
+        df_result = df_result.reset_index()
+
+    # Agregar filas nuevas
+    if not new_rows.empty:
+        max_id = int(df_result["ID"].max() or 0)
+        new_rows = new_rows.copy()
+        new_rows["ID"]             = list(range(max_id + 1, max_id + 1 + len(new_rows)))
+        new_rows["FECHA_CREACION"] = pd.Timestamp(HOY)
+        for col, default in [("ESTADO","Pendiente"),("PRIORIDAD","Media"),
+                              ("TIPO","Tarea"),("AREA","Trabajo")]:
+            if col in new_rows.columns:
+                new_rows[col] = new_rows[col].fillna(default)
+            else:
+                new_rows[col] = default
+        # Alinear columnas con df_result
+        for col in df_result.columns:
+            if col not in new_rows.columns:
+                new_rows[col] = pd.NA
+        df_result = pd.concat(
+            [df_result, new_rows[df_result.columns]], ignore_index=True)
+
     return df_result
 
 # ─── HELPERS VISUALES ─────────────────────────────────────────────────────────
