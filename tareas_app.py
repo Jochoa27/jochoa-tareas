@@ -557,6 +557,171 @@ if mod == "Centro de Comando":
                                color=tasa_clr),                                            unsafe_allow_html=True)
 
     st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
+
+    # ── Inputs compartidos JS→Python (agenda + calendario) ────────────────────
+    if "ag_task_action" not in st.session_state:
+        st.session_state["ag_task_action"] = ""
+    if "ag_drag_order" not in st.session_state:
+        st.session_state["ag_drag_order"] = ""
+    ag_action_raw = st.text_input("TASK_ACTION", key="ag_task_action")
+    ag_order_raw  = st.text_input("DRAG_ORDER",  key="ag_drag_order")
+    st.markdown(
+        '<style>'
+        'div[data-testid="stTextInput"]:has(input[aria-label="TASK_ACTION"]),'
+        'div[data-testid="stTextInput"]:has(input[aria-label="DRAG_ORDER"])'
+        '{display:none!important;}</style>', unsafe_allow_html=True)
+
+    # ── Procesar acciones (compartido) ────────────────────────────────────────
+    if ag_action_raw.strip() and _token():
+        try:
+            _pts = ag_action_raw.strip().split(":", 2)
+            _aty = _pts[0] if len(_pts) == 3 else "complete"
+            _tid = int(_pts[1] if len(_pts) == 3 else _pts[0])
+            _val = _pts[2] if len(_pts) == 3 else (_pts[1] if len(_pts) > 1 else "")
+            st.session_state["ag_task_action"] = ""
+            _dfc = df_raw.copy()
+            _mk  = _dfc["ID"] == _tid
+            if _aty == "date":
+                _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val)
+            else:
+                _dfc.loc[_mk, "ESTADO"] = _val
+                _dfc.loc[_mk, "FECHA_CIERRE"] = (
+                    pd.Timestamp(HOY) if _val == "Completada" else pd.NaT)
+            with st.spinner("Guardando..."):
+                _ok, _ms = guardar_github(_dfc)
+            if _ok:
+                st.toast("✅ Guardado"); st.rerun()
+            else:
+                st.error(_ms)
+        except Exception:
+            st.session_state["ag_task_action"] = ""
+
+    # ── Toggle Agenda / Calendario ────────────────────────────────────────────
+    if "cc_view" not in st.session_state:
+        st.session_state["cc_view"] = "agenda"
+    _tv1, _tv2, _tv3 = st.columns([2, 2, 8])
+    with _tv1:
+        if st.button("📌 Agenda", key="btn_vw_ag", use_container_width=True,
+                     type="primary" if st.session_state["cc_view"]=="agenda" else "secondary"):
+            st.session_state["cc_view"] = "agenda"; st.rerun()
+    with _tv2:
+        if st.button("📅 Calendario", key="btn_vw_cal", use_container_width=True,
+                     type="primary" if st.session_state["cc_view"]=="calendario" else "secondary"):
+            st.session_state["cc_view"] = "calendario"; st.rerun()
+    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # VISTA CALENDARIO — 7 días interactivo, drag cross-column
+    # ══════════════════════════════════════════════════════════════════════════
+    if st.session_state["cc_view"] == "calendario":
+        seccion("📅",
+                f"CALENDARIO SEMANAL · {HOY.strftime('%d %b')} – "
+                f"{(HOY+timedelta(days=6)).strftime('%d %b %Y')}",
+                C_CIAN)
+        _cal_ac = ac[
+            ac["FECHA_COMPROMISO"].notna() &
+            (ac["FECHA_COMPROMISO"] >= HOY_TS) &
+            (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=6))
+        ]
+        _DIAS_ES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
+        _CPICO   = {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"}
+        _dcols_h = ""
+        _mx_t    = 0
+        for _i in range(7):
+            _d     = HOY + timedelta(days=_i)
+            _d_str = _d.strftime("%Y-%m-%d")
+            _td    = _cal_ac[_cal_ac["FECHA_COMPROMISO"].dt.date == _d]
+            if len(_td) > _mx_t: _mx_t = len(_td)
+            _es_h  = (_i == 0)
+            _hc    = C_CIAN if _es_h else "#475569"
+            _nc    = "#F8FAFC" if _es_h else "#94A3B8"
+            _bc    = f"{C_CIAN}55" if _es_h else "#1E293B"
+            _dn    = _DIAS_ES[_d.weekday()]
+            _th    = ""
+            for _, _t in _td.iterrows():
+                _ti2 = int(_t["ID"])
+                _dn2 = str(_t.get("ESTADO","")) == "Completada"
+                _p2  = str(_t.get("PRIORIDAD","Media"))
+                _c2  = PRIO_CLR.get(_p2, C_GRIS)
+                _n2  = (str(_t.get("TAREA",""))
+                        .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
+                _ch2 = "checked" if _dn2 else ""
+                _s2  = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
+                _th += (
+                    f'<div class="tc" data-id="{_ti2}" style="border-color:{_c2}30;">'
+                    f'<input class="tc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
+                    f'<div class="tc-b">'
+                    f'<div style="font-size:0.50rem;font-weight:700;color:{_c2};">'
+                    f'{_CPICO.get(_p2,"")} {_p2}</div>'
+                    f'<div class="tc-nm" style="{_s2}">{_n2}</div>'
+                    f'</div></div>'
+                )
+            _dcols_h += (
+                f'<div class="dc {"today" if _es_h else ""}">'
+                f'<div class="dc-hdr" style="color:{_hc};">{_dn}</div>'
+                f'<div class="dc-num" style="color:{_nc};">{_d.day}</div>'
+                f'<div class="dz" data-date="{_d_str}" id="dz{_d_str}" '
+                f'style="border-color:{_bc};">{_th}</div></div>'
+            )
+        _cal_h   = max(380, 220 + _mx_t * 78)
+        _tok_ok2 = "true" if _token() else "false"
+        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
+.cal{{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:2px;}}
+.dc{{background:rgba(13,21,38,0.88);border:1px solid #1E293B;border-radius:14px;padding:12px 8px;}}
+.dc.today{{border-color:rgba(56,189,248,0.50);background:rgba(13,21,38,0.94);}}
+.dc-hdr{{font-size:0.52rem;font-weight:800;letter-spacing:0.10em;margin-bottom:2px;}}
+.dc-num{{font-size:1.40rem;font-weight:900;line-height:1;margin-bottom:10px;}}
+.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
+.dz.ov{{border-color:rgba(56,189,248,.35)!important;background:rgba(56,189,248,.04);}}
+.tc{{background:rgba(13,21,38,0.72);border:1px solid;border-radius:8px;padding:6px 6px;
+     margin-bottom:4px;cursor:grab;display:flex;align-items:flex-start;gap:5px;}}
+.tc:active{{cursor:grabbing;}}
+.sortable-ghost{{opacity:.22;transform:scale(.95);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba(56,189,248,.24);}}
+.tc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;margin-top:2px;}}
+.tc-b{{flex:1;min-width:0;}}
+.tc-nm{{font-size:0.65rem;font-weight:600;color:#CBD5E1;line-height:1.28;word-break:break-word;}}
+</style></head><body>
+<div class="cal">{_dcols_h}</div>
+<script>
+var HT={_tok_ok2};
+function nfy(v){{
+  try{{
+    var el=window.parent.document.querySelector('input[aria-label="TASK_ACTION"]');
+    if(!el)return;
+    var s=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
+    s.call(el,v); el.dispatchEvent(new Event('input',{{bubbles:true}}));
+  }}catch(e){{console.error(e);}}
+}}
+document.querySelectorAll('.dz').forEach(function(dz){{
+  Sortable.create(dz,{{
+    group:'cal',animation:150,ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
+    onAdd:function(evt){{if(HT)nfy('date:'+evt.item.dataset.id+':'+evt.to.dataset.date);}},
+    onOver:function(evt){{evt.to.classList.add('ov');}},
+    onLeave:function(evt){{evt.from.classList.remove('ov');}}
+  }});
+}});
+if(HT){{
+  document.querySelectorAll('.tc-chk').forEach(function(chk){{
+    chk.addEventListener('change',function(){{
+      var ns=this.checked?'Completada':'Pendiente';
+      var nm=this.closest('.tc').querySelector('.tc-nm');
+      if(this.checked){{nm.style.textDecoration='line-through';nm.style.opacity='.38';}}
+      else{{nm.style.textDecoration='';nm.style.opacity='';}}
+      nfy('complete:'+this.dataset.id+':'+ns);
+    }});
+  }});
+}}
+</script></body></html>""", height=_cal_h, scrolling=False)
+        st.stop()   # no renderizar sección agenda debajo
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # VISTA AGENDA
+    # ══════════════════════════════════════════════════════════════════════════
     col_ag, col_prox = st.columns([3, 2])
 
     # ── Agenda del Día ────────────────────────────────────────────────────────
@@ -580,22 +745,6 @@ if mod == "Centro de Comando":
             ordered_ids += [i for i in id_to_row if i not in ordered_ids]
             st.session_state["agenda_order"] = ordered_ids
 
-            # ── Inputs ocultos para comunicación con JS ──────────────────────
-            if "ag_drag_order" not in st.session_state:
-                st.session_state["ag_drag_order"] = ",".join(str(i) for i in ordered_ids)
-            if "ag_task_action" not in st.session_state:
-                st.session_state["ag_task_action"] = ""
-
-            ag_order_raw  = st.text_input("DRAG_ORDER",  key="ag_drag_order")
-            ag_action_raw = st.text_input("TASK_ACTION", key="ag_task_action")
-
-            st.markdown(
-                '<style>'
-                'div[data-testid="stTextInput"]:has(input[aria-label="DRAG_ORDER"]),'
-                'div[data-testid="stTextInput"]:has(input[aria-label="TASK_ACTION"])'
-                '{display:none!important;}</style>',
-                unsafe_allow_html=True)
-
             # ── Procesar cambio de orden ──────────────────────────────────────
             if ag_order_raw.strip():
                 try:
@@ -605,28 +754,6 @@ if mod == "Centro de Comando":
                         st.session_state["agenda_order"] = new_ids
                 except Exception:
                     pass
-
-            # ── Procesar acción de checkbox ───────────────────────────────────
-            if ag_action_raw.strip() and _token():
-                try:
-                    tid_str, new_st_val = ag_action_raw.strip().split(":", 1)
-                    tid_val = int(tid_str)
-                    st.session_state["ag_task_action"] = ""   # limpiar antes del rerun
-                    df_copy = df_raw.copy()
-                    m2 = df_copy["ID"] == tid_val
-                    df_copy.loc[m2, "ESTADO"] = new_st_val
-                    df_copy.loc[m2, "FECHA_CIERRE"] = (
-                        pd.Timestamp(HOY) if new_st_val == "Completada" else pd.NaT
-                    )
-                    with st.spinner("Guardando..."):
-                        ok2, msg2 = guardar_github(df_copy)
-                    if ok2:
-                        st.toast("✅ Guardado")
-                        st.rerun()
-                    else:
-                        st.error(msg2)
-                except Exception:
-                    st.session_state["ag_task_action"] = ""
 
             # ── Construir HTML de tarjetas ────────────────────────────────────
             _PICO = {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"}
@@ -726,7 +853,7 @@ if(hasToken){{
       var nm=this.closest('.sc').querySelector('.nm');
       if(this.checked){{nm.style.textDecoration='line-through';nm.style.opacity='.42';nm.style.color='#64748B';}}
       else{{nm.style.textDecoration='';nm.style.opacity='';nm.style.color='';}}
-      notify('action',tid+':'+ns);
+      notify('action','complete:'+tid+':'+ns);
     }});
   }});
 }}
@@ -768,73 +895,7 @@ if(hasToken){{
                     f'</div>'
                 )
             st.markdown(f'<div class="scroll-box">{items_h}</div>', unsafe_allow_html=True)
-        st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
-        if st.button("📅 Ver en calendario →", use_container_width=True,
-                     key="btn_cal_open"):
-            st.session_state["show_cal"] = not st.session_state.get("show_cal", False)
-
-    # ── Calendario 7 días (expandible a pantalla completa) ────────────────────
-    if st.session_state.get("show_cal", False):
-        prox7_cal = ac[
-            ac["FECHA_COMPROMISO"].notna() &
-            (ac["FECHA_COMPROMISO"] >= HOY_TS) &
-            (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=7))
-        ]
-        DIAS_ES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
-        cal_html = (
-            '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;'
-            'margin-top:16px;">'
-        )
-        for i in range(7):
-            d = HOY + timedelta(days=i)
-            d_ts = pd.Timestamp(d)
-            tareas_dia = prox7_cal[prox7_cal["FECHA_COMPROMISO"].dt.date == d]
-            es_hoy = (i == 0)
-            hdr_clr = C_CIAN if es_hoy else "#475569"
-            num_clr = "#F8FAFC" if es_hoy else "#94A3B8"
-            brd_clr = f"{C_CIAN}55" if es_hoy else "#1E293B"
-            dia_nombre = DIAS_ES[d.weekday()]
-            cal_html += (
-                f'<div style="background:rgba(13,21,38,0.85);border:1px solid {brd_clr};'
-                f'border-radius:12px;padding:10px 8px;min-height:110px;">'
-                f'<div style="font-size:0.54rem;font-weight:800;color:{hdr_clr};'
-                f'letter-spacing:0.10em;">{dia_nombre}</div>'
-                f'<div style="font-size:1.35rem;font-weight:900;color:{num_clr};'
-                f'line-height:1.1;margin-bottom:8px;">{d.day}</div>'
-            )
-            if tareas_dia.empty:
-                cal_html += '<div style="color:#1E293B;font-size:0.60rem;text-align:center;">—</div>'
-            else:
-                for _, t in tareas_dia.iterrows():
-                    p2  = str(t.get("PRIORIDAD","Media"))
-                    pc2 = PRIO_CLR.get(p2, C_GRIS)
-                    nombre_c = str(t["TAREA"])[:24]
-                    cal_html += (
-                        f'<div title="{t["TAREA"]}" style="background:{pc2}16;border:1px solid {pc2}30;'
-                        f'border-radius:6px;padding:3px 6px;margin-bottom:4px;'
-                        f'font-size:0.58rem;color:{pc2};white-space:nowrap;'
-                        f'overflow:hidden;text-overflow:ellipsis;">'
-                        f'{PRIO_ICO.get(p2,"")} {nombre_c}</div>'
-                    )
-            cal_html += '</div>'
-        cal_html += '</div>'
-
-        btn_cerrar, _ = st.columns([2, 10])
-        with btn_cerrar:
-            if st.button("✕ Cerrar calendario", key="btn_cal_close"):
-                st.session_state["show_cal"] = False
-                st.rerun()
-        st.markdown(
-            f'<div style="background:rgba(6,11,21,0.95);border:1px solid rgba(56,189,248,0.14);'
-            f'border-radius:16px;padding:20px 24px;margin-top:4px;">'
-            f'<div style="font-size:0.54rem;font-weight:800;letter-spacing:0.22em;'
-            f'color:{C_CIAN};margin-bottom:2px;">VISTA CALENDARIO</div>'
-            f'<div style="font-size:1.1rem;font-weight:900;color:#F8FAFC;margin-bottom:12px;">'
-            f'Próximos 7 días · {HOY.strftime("%d %b")} – {(HOY+timedelta(days=6)).strftime("%d %b %Y")}'
-            f'</div>'
-            f'{cal_html}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 2: DIAGNÓSTICO DE RIESGO
