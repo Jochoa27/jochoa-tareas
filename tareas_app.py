@@ -65,7 +65,7 @@ def cargar(mtime):
     df = pd.read_excel(ARCHIVO, sheet_name="TAREAS")
     for col in ["FECHA_COMPROMISO", "FECHA_INICIO", "FECHA_CIERRE"]:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+            df[col] = pd.to_datetime(df[col], errors="coerce").astype("datetime64[us]")
     defaults = {"PRIORIDAD": "Media", "ESTADO": "Pendiente",
                 "PROYECTO": "GENERAL", "AREA": "Trabajo", "NOTAS": ""}
     for col, val in defaults.items():
@@ -126,13 +126,13 @@ df = df_raw[
 activas  = df_raw[df_raw["ESTADO"] != "Completada"]
 comps    = df_raw[df_raw["ESTADO"] == "Completada"]
 vencidas = activas[activas["FECHA_COMPROMISO"].notna() &
-                    (activas["FECHA_COMPROMISO"].dt.date < HOY)]
+                    (activas["FECHA_COMPROMISO"] < pd.Timestamp(HOY))]
 ini_sem  = HOY - timedelta(days=HOY.weekday())
 c_sem    = comps[comps["FECHA_CIERRE"].notna() &
-                  (comps["FECHA_CIERRE"].dt.date >= ini_sem)]
+                  (comps["FECHA_CIERRE"] >= pd.Timestamp(ini_sem))]
 c_mes    = comps[comps["FECHA_CIERRE"].notna() &
-                  comps["FECHA_CIERRE"].dt.date.apply(
-                      lambda d: d.month == HOY.month and d.year == HOY.year)]
+                  (comps["FECHA_CIERRE"].dt.month == HOY.month) &
+                  (comps["FECHA_CIERRE"].dt.year  == HOY.year)]
 
 n_act  = len(activas)
 n_pend = int((df_raw["ESTADO"] == "Pendiente").sum())
