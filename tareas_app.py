@@ -586,8 +586,7 @@ if mod == "Centro de Comando":
 
             # Labels codificadas con ID para el drag
             labels = [f"[{i}] {str(id_to_row[i]['TAREA'])[:42]}" for i in ordered]
-            sorted_labels = sort_items(labels, key="agenda_drag",
-                                       header_color="#0A1220", item_color="#0D1B2A")
+            sorted_labels = sort_items(labels, key="agenda_drag")
             # Actualizar orden según arrastre
             new_order = []
             for lbl in sorted_labels:
