@@ -959,8 +959,182 @@ document.querySelectorAll('.tc').forEach(function(c){{
         st.stop()   # no renderizar sección agenda debajo
 
     # ══════════════════════════════════════════════════════════════════════════
-    # VISTA AGENDA
+    # VISTAS KANBAN (Estado / Prioridad / Área / Categoría)
     # ══════════════════════════════════════════════════════════════════════════
+    _cv = st.session_state["cc_view"]
+    if _cv in ("estado","prioridad","area","categoria"):
+
+        _KB_CFG = {
+            "estado": {
+                "field":  "ESTADO",
+                "groups": ["Pendiente","En Proceso","Esperando Terceros","Completada"],
+                "colors": {"Pendiente":C_GRIS,"En Proceso":C_CIAN,
+                           "Esperando Terceros":C_ALERTA,"Completada":C_OK},
+                "icons":  {"Pendiente":"⏳","En Proceso":"🔄",
+                           "Esperando Terceros":"🕐","Completada":"✅"},
+            },
+            "prioridad": {
+                "field":  "PRIORIDAD",
+                "groups": ["Crítica","Alta","Media","Baja"],
+                "colors": {"Crítica":C_CRITICO,"Alta":C_ALERTA,"Media":C_CIAN,"Baja":C_GRIS},
+                "icons":  {"Crítica":"🔴","Alta":"🟡","Media":"🔵","Baja":"⚫"},
+            },
+            "area": {
+                "field":  "AREA",
+                "groups": ["Trabajo","Personal"],
+                "colors": {"Trabajo":C_CIAN,"Personal":C_MORADO},
+                "icons":  {"Trabajo":"💼","Personal":"🏠"},
+            },
+            "categoria": {
+                "field":  "CATEGORIA",
+                "groups": ["Planificación","Contratos","Compras","Reportes",
+                           "IA y Automatización","Gestión Corporativa",
+                           "Reuniones","Salud","Personal"],
+                "colors": {g:C_CIAN for g in ["Planificación","Contratos","Compras",
+                                               "Reportes","IA y Automatización",
+                                               "Gestión Corporativa","Reuniones",
+                                               "Salud","Personal"]},
+                "icons":  {"Planificación":"📐","Contratos":"📝","Compras":"🛒",
+                           "Reportes":"📊","IA y Automatización":"🤖",
+                           "Gestión Corporativa":"🏢","Reuniones":"📅",
+                           "Salud":"❤️","Personal":"🏠"},
+            },
+        }
+
+        _cfg     = _KB_CFG[_cv]
+        _kfield  = _cfg["field"]
+        _kgroups = _cfg["groups"]
+        _kcolors = _cfg["colors"]
+        _kicons  = _cfg["icons"]
+
+        # Para estado usamos df_raw sin Cancelada; resto solo activas
+        _kac = (df_raw[~df_raw["ESTADO"].isin(["Cancelada"])]
+                if _cv == "estado" else ac)
+
+        seccion("📋", f"KANBAN POR {_kfield}", C_CIAN)
+
+        # ── Construir columnas ────────────────────────────────────────────────
+        _kn      = len(_kgroups)
+        _grid_tc = f"repeat({_kn},1fr)" if _kn <= 5 else "repeat(auto-fill,minmax(200px,1fr))"
+        _mx_t    = 0
+        _dcols_h = ""
+        for _gval in _kgroups:
+            _gdf = _kac[_kac[_kfield].fillna("") == _gval]
+            if len(_gdf) > _mx_t: _mx_t = len(_gdf)
+            _gc2  = _kcolors.get(_gval, C_GRIS)
+            _gi   = _kicons.get(_gval, "")
+            _sg   = _gval.replace(" ","-").replace("/","-")
+            _th2  = ""
+            for _, _t in _gdf.iterrows():
+                _ti2 = int(_t["ID"])
+                _dn2 = str(_t.get("ESTADO","")) == "Completada"
+                _nm2 = (str(_t.get("TAREA",""))
+                        .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
+                _pj2 = str(_t.get("PROYECTO","") or "")[:22]
+                _fc2 = _t.get("FECHA_COMPROMISO")
+                _fs2 = pd.Timestamp(_fc2).strftime("%d/%m") if pd.notna(_fc2) else ""
+                _pr2 = str(_t.get("PRIORIDAD","Media"))
+                _pc3 = PRIO_CLR.get(_pr2, C_GRIS)
+                _ch3 = "checked" if _dn2 else ""
+                _sy3 = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
+                _th2 += (
+                    f'<div class="kc" data-id="{_ti2}">'
+                    f'<div class="kc-top">'
+                    f'<span class="kc-dot" style="background:{_pc3};"></span>'
+                    f'<span class="kc-ico" style="color:{_pc3};">{PRIO_ICO.get(_pr2,"")}</span>'
+                    f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch3}>'
+                    f'</div>'
+                    f'<div class="kc-nm" style="{_sy3}">{_nm2}</div>'
+                    f'<div class="kc-meta">'
+                    + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
+                    + (f'<span class="kc-fc">{_fs2}</span>' if _fs2 else '')
+                    + f'</div></div>'
+                )
+            _dcols_h += (
+                f'<div class="kk" style="border-top:3px solid {_gc2}45;">'
+                f'<div class="kk-hdr" style="color:{_gc2};">{_gi} {_gval}</div>'
+                f'<div class="kk-cnt">{len(_gdf)} tareas</div>'
+                f'<div class="dz" data-field="{_kfield}" data-group="{_gval}" '
+                f'id="dz-{_sg}">{_th2}</div></div>'
+            )
+
+        _kh     = max(440, 260 + _mx_t * 90)
+        _tokk   = "true" if _token() else "false"
+        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;overflow:hidden;}}
+.kb{{display:grid;grid-template-columns:{_grid_tc};gap:10px;padding:2px;}}
+.kk{{background:rgba(13,21,38,0.88);border:1px solid #1E293B;border-radius:14px;padding:12px 9px;}}
+.kk-hdr{{font-size:0.70rem;font-weight:900;letter-spacing:0.06em;margin-bottom:2px;}}
+.kk-cnt{{font-size:0.50rem;color:#334155;font-weight:700;margin-bottom:10px;}}
+.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
+.dz.ov{{border-color:rgba(56,189,248,.35)!important;background:rgba(56,189,248,.04);}}
+.kc{{background:rgba(13,21,38,0.72);border:1px solid #1E293B;border-radius:9px;
+     padding:8px;margin-bottom:5px;cursor:grab;}}
+.kc:active{{cursor:grabbing;}}
+.kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:5px;}}
+.kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
+.kc-ico{{font-size:0.60rem;flex:1;}}
+.kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
+.kc-nm{{font-size:0.71rem;font-weight:600;color:#CBD5E1;line-height:1.3;word-break:break-word;}}
+.kc-meta{{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;}}
+.kc-proj{{font-size:0.54rem;color:#475569;background:rgba(56,189,248,0.08);
+          border-radius:4px;padding:1px 5px;}}
+.kc-fc{{font-size:0.54rem;color:#64748B;}}
+.sortable-ghost{{opacity:.20;transform:scale(.95);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba(56,189,248,.24);}}
+</style></head><body>
+<div class="kb">{_dcols_h}</div>
+<script>
+var HT={_tokk};
+function nfy(v){{
+  try{{
+    var el=window.parent.document.querySelector('input[aria-label="TASK_ACTION"]');
+    if(!el)return;
+    var s=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
+    s.call(el,v);
+    el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    el.dispatchEvent(new KeyboardEvent('keydown',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keypress',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+    el.dispatchEvent(new KeyboardEvent('keyup',{{bubbles:true,cancelable:true,key:'Enter',keyCode:13}}));
+  }}catch(e){{console.error(e);}}
+}}
+document.querySelectorAll('.dz').forEach(function(dz){{
+  Sortable.create(dz,{{
+    group:'kb',animation:150,ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
+    onAdd:function(evt){{
+      if(HT)nfy('field:'+evt.item.dataset.id+':'+evt.to.dataset.field+':'+evt.to.dataset.group);
+    }},
+    onOver:function(evt){{evt.to.classList.add('ov');}},
+    onLeave:function(evt){{evt.from.classList.remove('ov');}}
+  }});
+}});
+if(HT){{
+  document.querySelectorAll('.kc-chk').forEach(function(chk){{
+    chk.addEventListener('change',function(){{
+      var ns=this.checked?'Completada':'Pendiente';
+      var nm=this.closest('.kc').querySelector('.kc-nm');
+      if(this.checked){{nm.style.textDecoration='line-through';nm.style.opacity='.38';}}
+      else{{nm.style.textDecoration='';nm.style.opacity='';}}
+      nfy('complete:'+this.dataset.id+':'+ns);
+    }});
+  }});
+}}
+var _dbt={{}};
+document.querySelectorAll('.kc').forEach(function(c){{
+  c.addEventListener('click',function(e){{
+    if(e.target.closest('.kc-chk'))return;
+    var tid=this.dataset.id,now=Date.now();
+    if(_dbt[tid]&&(now-_dbt[tid])<380){{_dbt[tid]=0;nfy('open:'+tid+':');}}
+    else{{_dbt[tid]=now;}}
+  }});
+}});
+</script></body></html>""", height=_kh, scrolling=False)
+        st.stop()
+
+    # fallback → no hay otra vista debajo
     col_ag, col_prox = st.columns([3, 2])
 
     # ── Agenda del Día ────────────────────────────────────────────────────────
