@@ -1156,6 +1156,44 @@ elif mod == "Bandeja Operacional":
         if dc in df_edit.columns:
             df_edit[dc] = pd.to_datetime(df_edit[dc], errors="coerce").dt.date
 
+    # ── Controles de ordenamiento ──────────────────────────────────────────────
+    _SORT_LBL = {
+        "ID":"ID","TAREA":"Tarea","TIPO":"Tipo","PROYECTO":"Proyecto","AREA":"Área",
+        "CATEGORIA":"Categoría","PRIORIDAD":"Prioridad","ESTADO":"Estado",
+        "IMPACTO":"Impacto","URGENCIA":"Urgencia","ESFUERZO_HRS":"Horas",
+        "TERCERO":"Tercero","FECHA_COMPROMISO":"Fecha de vencimiento",
+        "FECHA_CIERRE":"Fecha de cierre",
+    }
+    _SORT_COLS = ["—"] + [c for c in COLS_EDIT if c != "NOTAS"]
+    _srt1, _srt2 = st.columns([4, 3])
+    with _srt1:
+        _sort_by = st.selectbox(
+            "Ordenar por",
+            options=_SORT_COLS,
+            format_func=lambda x: "— Sin ordenar —" if x == "—" else _SORT_LBL.get(x, x),
+            key="bop_sort_col",
+        )
+    with _srt2:
+        _sort_asc = st.radio(
+            "Dirección",
+            options=["↑ Ascendente", "↓ Descendente"],
+            horizontal=True,
+            key="bop_sort_dir",
+        ) == "↑ Ascendente"
+    if _sort_by != "—" and _sort_by in df_edit.columns:
+        if _sort_by == "PRIORIDAD":
+            _pord = {"Crítica":0,"Alta":1,"Media":2,"Baja":3}
+            df_edit = df_edit.sort_values(
+                "PRIORIDAD", ascending=_sort_asc,
+                key=lambda s: s.map(_pord).fillna(9), na_position="last")
+        elif _sort_by == "ESTADO":
+            _eord = {"Pendiente":0,"En Proceso":1,"Esperando Terceros":2,"Completada":3,"Cancelada":4}
+            df_edit = df_edit.sort_values(
+                "ESTADO", ascending=_sort_asc,
+                key=lambda s: s.map(_eord).fillna(9), na_position="last")
+        else:
+            df_edit = df_edit.sort_values(_sort_by, ascending=_sort_asc, na_position="last")
+
     _OPTS_EST  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
     _OPTS_PRIO = ["Crítica","Alta","Media","Baja"]
     _OPTS_TIPO = ["Tarea","Seguimiento","Compromiso","Reunión"]
