@@ -629,7 +629,7 @@ elif mod == "Diagnóstico de Riesgo":
     )
     cols_show = [c for c in ["TAREA","ZONA","PRIORIDAD","ESTADO","URGENCIA","IMPACTO","ESFUERZO_HRS",
                               "TERCERO","FECHA_COMPROMISO"] if c in ac_t.columns]
-    ac_tshow = ac_t[cols_show].sort_values("RIESGO", ascending=False).copy()
+    ac_tshow = ac_t.sort_values("RIESGO", ascending=False)[cols_show].copy()
     if "FECHA_COMPROMISO" in ac_tshow.columns:
         ac_tshow["FECHA_COMPROMISO"] = ac_tshow["FECHA_COMPROMISO"].dt.strftime("%d/%m/%Y").fillna("—")
     st.dataframe(ac_tshow.fillna("—"), use_container_width=True, hide_index=True,
