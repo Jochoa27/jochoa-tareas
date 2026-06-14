@@ -7,10 +7,12 @@ import pandas as pd
 import json
 import base64
 import io
+import re
 import requests
 from pathlib import Path
 from datetime import date, timedelta
 import streamlit.components.v1 as components
+from streamlit_sortables import sort_items
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 ARCHIVO = Path(__file__).parent / "TAREAS_JOCHOA.xlsx"
@@ -560,57 +562,81 @@ if mod == "Centro de Comando":
 
     # ── Agenda del Día ────────────────────────────────────────────────────────
     with col_ag:
-        seccion("📌", "AGENDA DEL DÍA", C_CRITICO)
-        agenda = ac[
+        seccion("📌", "AGENDA DEL DÍA · arrastra para reordenar", C_CRITICO)
+        agenda_base = ac[
             (ac["PRIORIDAD"].isin(["Crítica","Alta"])) |
             (ac["FECHA_COMPROMISO"].notna() &
              (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=1)))
-        ].sort_values(["PRIO_ORD","FECHA_COMPROMISO"]).head(12)
+        ].head(14)
 
-        if agenda.empty:
+        # Incluir también completadas visibles (para mostrar tachadas)
+        agenda_ids_all = set(agenda_base["ID"].astype(int))
+        id_to_row = {int(r["ID"]): r for _, r in agenda_base.iterrows()}
+
+        if not id_to_row:
             st.markdown('<div style="color:#334155;font-size:0.80rem;padding:20px;text-align:center;">'
                         '✅ No hay tareas urgentes pendientes</div>', unsafe_allow_html=True)
         else:
-            for _, r in agenda.iterrows():
-                task_id = int(r.get("ID", 0))
+            # Mantener/actualizar orden en session_state
+            prev = st.session_state.get("agenda_order", [])
+            cur_ids = list(id_to_row.keys())
+            ordered = [i for i in prev if i in agenda_ids_all]
+            ordered += [i for i in cur_ids if i not in ordered]
+            st.session_state["agenda_order"] = ordered
+
+            # Labels codificadas con ID para el drag
+            labels = [f"[{i}] {str(id_to_row[i]['TAREA'])[:42]}" for i in ordered]
+            sorted_labels = sort_items(labels, key="agenda_drag",
+                                       header_color="#0A1220", item_color="#0D1B2A")
+            # Actualizar orden según arrastre
+            new_order = []
+            for lbl in sorted_labels:
+                m = re.match(r'\[(\d+)\]', lbl)
+                if m:
+                    new_order.append(int(m.group(1)))
+            st.session_state["agenda_order"] = new_order
+
+            st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+            # Renderizar tarjetas en el nuevo orden
+            for task_id in new_order:
+                r = id_to_row.get(task_id)
+                if r is None:
+                    continue
+                is_done = str(r.get("ESTADO","")) == "Completada"
                 p   = str(r.get("PRIORIDAD","Media"))
                 pc  = PRIO_CLR.get(p, C_GRIS)
-                est = str(r.get("ESTADO","Pendiente"))
-                ec2 = EST_CLR.get(est, C_GRIS)
                 fc  = r.get("FECHA_COMPROMISO")
                 sc, sd = semaforo(fc)
-                venc_r  = pd.notna(fc) and fc < HOY_TS
-                bg  = "rgba(255,71,87,0.06)" if venc_r else "rgba(13,21,38,0.70)"
-                brd = "rgba(255,71,87,0.28)" if venc_r else f"{pc}24"
+                venc_r  = pd.notna(fc) and fc < HOY_TS and not is_done
+                bg  = "rgba(255,71,87,0.04)" if venc_r else ("rgba(35,209,96,0.03)" if is_done else "rgba(13,21,38,0.70)")
+                brd = "rgba(255,71,87,0.18)" if venc_r else (f"{C_OK}20" if is_done else f"{pc}20")
                 tipo = str(r.get("TIPO","Tarea"))
                 tc   = TIPO_CLR.get(tipo, C_CIAN)
                 proj = str(r.get("PROYECTO",""))
-                st.markdown(
-                    f'<div class="tc" style="background:{bg};border-color:{brd};">'
-                    f'<div>{chip(f"{PRIO_ICO.get(p,"")} {p}", pc)}'
-                    f'{chip(tipo, tc)}{chip(proj, C_INDIGO)}'
-                    f'<span style="float:right;">{chip(est, ec2)}</span></div>'
-                    f'<div class="tc-t">{r["TAREA"]}</div>'
-                    f'<div class="tc-dt" style="color:{sc};">⏱ {sd}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True)
-                if est not in ("Completada","Cancelada") and _token():
-                    bb1, bb2, bb3, _ = st.columns([2, 2, 2, 6])
-                    with bb1:
-                        if st.button("✅ Completar", key=f"done_{task_id}",
-                                     use_container_width=True):
-                            _marcar_estado(task_id, "Completada")
-                    with bb2:
-                        if st.button("🔄 Proceso", key=f"proc_{task_id}",
-                                     use_container_width=True):
-                            _marcar_estado(task_id, "En Proceso")
-                    with bb3:
-                        if st.button("⌛ Terceros", key=f"terc_{task_id}",
-                                     use_container_width=True):
-                            _marcar_estado(task_id, "Esperando Terceros")
-                st.markdown('<div style="height:2px;"></div>', unsafe_allow_html=True)
+                strike = "text-decoration:line-through;opacity:0.45;" if is_done else ""
+                nombre_display = f'<span style="{strike}">{r["TAREA"]}</span>'
 
-    # ── Próximos 7 días ───────────────────────────────────────────────────────
+                c_chk, c_card = st.columns([0.6, 11])
+                with c_chk:
+                    checked = st.checkbox(
+                        "", value=is_done, key=f"chk_{task_id}",
+                        label_visibility="collapsed",
+                        help="Marcar como completada / desmarcar para reactivar"
+                    )
+                    if checked != is_done and _token():
+                        _marcar_estado(task_id, "Completada" if checked else "Pendiente")
+                with c_card:
+                    st.markdown(
+                        f'<div class="tc" style="background:{bg};border-color:{brd};margin:0 0 4px;">'
+                        f'<div>{chip(f"{PRIO_ICO.get(p,"")} {p}", pc)}'
+                        f'{chip(tipo, tc)}{chip(proj, C_INDIGO)}</div>'
+                        f'<div class="tc-t">{nombre_display}</div>'
+                        f'<div class="tc-dt" style="color:{sc};">⏱ {sd}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True)
+
+    # ── Próximos 7 días (lista compacta) ─────────────────────────────────────
     with col_prox:
         seccion("📅", "PRÓXIMOS 7 DÍAS", C_CIAN)
         prox7 = ac[
@@ -623,7 +649,7 @@ if mod == "Centro de Comando":
             st.markdown('<div style="color:#334155;font-size:0.80rem;padding:20px;text-align:center;">'
                         '📭 Sin vencimientos los próximos 7 días</div>', unsafe_allow_html=True)
         else:
-            items = ""
+            items_h = ""
             last_day = None
             for _, r in prox7.iterrows():
                 fc   = r["FECHA_COMPROMISO"]
@@ -633,10 +659,10 @@ if mod == "Centro de Comando":
                 pc   = PRIO_CLR.get(p, C_GRIS)
                 if day != last_day:
                     label = "HOY" if day == HOY else day.strftime("%a %d/%m").upper()
-                    items += (f'<div style="font-size:0.52rem;font-weight:800;letter-spacing:0.12em;'
-                              f'color:#334155;margin:10px 0 5px;">{label}</div>')
+                    items_h += (f'<div style="font-size:0.52rem;font-weight:800;letter-spacing:0.12em;'
+                                f'color:#334155;margin:10px 0 5px;">{label}</div>')
                     last_day = day
-                items += (
+                items_h += (
                     f'<div style="background:rgba(56,189,248,0.03);border:1px solid rgba(56,189,248,0.08);'
                     f'border-radius:10px;padding:8px 12px;margin-bottom:5px;">'
                     f'<div style="font-size:0.75rem;font-weight:700;color:#E2E8F0;line-height:1.3;">'
@@ -645,7 +671,74 @@ if mod == "Centro de Comando":
                     f'{chip(str(r.get("PROYECTO","")), C_INDIGO)}</div>'
                     f'</div>'
                 )
-            st.markdown(f'<div class="scroll-box">{items}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="scroll-box">{items_h}</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+        if st.button("📅 Ver en calendario →", use_container_width=True,
+                     key="btn_cal_open"):
+            st.session_state["show_cal"] = not st.session_state.get("show_cal", False)
+
+    # ── Calendario 7 días (expandible a pantalla completa) ────────────────────
+    if st.session_state.get("show_cal", False):
+        prox7_cal = ac[
+            ac["FECHA_COMPROMISO"].notna() &
+            (ac["FECHA_COMPROMISO"] >= HOY_TS) &
+            (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=7))
+        ]
+        DIAS_ES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
+        cal_html = (
+            '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;'
+            'margin-top:16px;">'
+        )
+        for i in range(7):
+            d = HOY + timedelta(days=i)
+            d_ts = pd.Timestamp(d)
+            tareas_dia = prox7_cal[prox7_cal["FECHA_COMPROMISO"].dt.date == d]
+            es_hoy = (i == 0)
+            hdr_clr = C_CIAN if es_hoy else "#475569"
+            num_clr = "#F8FAFC" if es_hoy else "#94A3B8"
+            brd_clr = f"{C_CIAN}55" if es_hoy else "#1E293B"
+            dia_nombre = DIAS_ES[d.weekday()]
+            cal_html += (
+                f'<div style="background:rgba(13,21,38,0.85);border:1px solid {brd_clr};'
+                f'border-radius:12px;padding:10px 8px;min-height:110px;">'
+                f'<div style="font-size:0.54rem;font-weight:800;color:{hdr_clr};'
+                f'letter-spacing:0.10em;">{dia_nombre}</div>'
+                f'<div style="font-size:1.35rem;font-weight:900;color:{num_clr};'
+                f'line-height:1.1;margin-bottom:8px;">{d.day}</div>'
+            )
+            if tareas_dia.empty:
+                cal_html += '<div style="color:#1E293B;font-size:0.60rem;text-align:center;">—</div>'
+            else:
+                for _, t in tareas_dia.iterrows():
+                    p2  = str(t.get("PRIORIDAD","Media"))
+                    pc2 = PRIO_CLR.get(p2, C_GRIS)
+                    nombre_c = str(t["TAREA"])[:24]
+                    cal_html += (
+                        f'<div title="{t["TAREA"]}" style="background:{pc2}16;border:1px solid {pc2}30;'
+                        f'border-radius:6px;padding:3px 6px;margin-bottom:4px;'
+                        f'font-size:0.58rem;color:{pc2};white-space:nowrap;'
+                        f'overflow:hidden;text-overflow:ellipsis;">'
+                        f'{PRIO_ICO.get(p2,"")} {nombre_c}</div>'
+                    )
+            cal_html += '</div>'
+        cal_html += '</div>'
+
+        btn_cerrar, _ = st.columns([2, 10])
+        with btn_cerrar:
+            if st.button("✕ Cerrar calendario", key="btn_cal_close"):
+                st.session_state["show_cal"] = False
+                st.rerun()
+        st.markdown(
+            f'<div style="background:rgba(6,11,21,0.95);border:1px solid rgba(56,189,248,0.14);'
+            f'border-radius:16px;padding:20px 24px;margin-top:4px;">'
+            f'<div style="font-size:0.54rem;font-weight:800;letter-spacing:0.22em;'
+            f'color:{C_CIAN};margin-bottom:2px;">VISTA CALENDARIO</div>'
+            f'<div style="font-size:1.1rem;font-weight:900;color:#F8FAFC;margin-bottom:12px;">'
+            f'Próximos 7 días · {HOY.strftime("%d %b")} – {(HOY+timedelta(days=6)).strftime("%d %b %Y")}'
+            f'</div>'
+            f'{cal_html}</div>',
+            unsafe_allow_html=True
+        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 2: DIAGNÓSTICO DE RIESGO
@@ -800,7 +893,7 @@ elif mod == "Bandeja Operacional":
         f'</div>', unsafe_allow_html=True)
 
     ac = _activas()
-    # Filtros
+    # ── Fila 1: filtros categoriales ──────────────────────────────────────────
     f1,f2,f3,f4,f5 = st.columns(5)
     with f1:
         projs = ["Todos"] + sorted(df_raw["PROYECTO"].dropna().unique().tolist())
@@ -818,6 +911,18 @@ elif mod == "Bandeja Operacional":
         buscar = st.text_input("🔍 Buscar", placeholder="Nombre de tarea...", key="bo_q",
                                label_visibility="visible")
 
+    # ── Fila 2: filtro de fecha ────────────────────────────────────────────────
+    fd1, fd2, fd3, _ = st.columns([2, 2, 2, 6])
+    with fd1:
+        usar_fecha = st.checkbox("Filtrar por fecha de vencimiento", key="bo_use_date")
+    if usar_fecha:
+        with fd2:
+            date_desde = st.date_input("Desde", value=HOY, key="bo_desde")
+        with fd3:
+            date_hasta = st.date_input("Hasta", value=HOY + timedelta(days=30), key="bo_hasta")
+    else:
+        date_desde = date_hasta = None
+
     df_f = df_raw.copy()
     if fe == "Activas":
         df_f = df_f[~df_f["ESTADO"].isin(["Completada","Cancelada"])]
@@ -828,17 +933,26 @@ elif mod == "Bandeja Operacional":
     if fpr != "Todos":     df_f = df_f[df_f["PRIORIDAD"] == fpr]
     if buscar.strip():
         df_f = df_f[df_f["TAREA"].str.contains(buscar.strip(), case=False, na=False)]
+    if usar_fecha and date_desde and date_hasta:
+        df_f = df_f[
+            df_f["FECHA_COMPROMISO"].notna() &
+            (df_f["FECHA_COMPROMISO"] >= pd.Timestamp(date_desde)) &
+            (df_f["FECHA_COMPROMISO"] <= pd.Timestamp(date_hasta))
+        ]
     df_f = df_f.sort_values(["PRIO_ORD","FECHA_COMPROMISO"])
 
     # Stats rápidas
     n_total  = len(df_f)
     n_pend   = int((df_f["ESTADO"]=="Pendiente").sum())
     n_proc   = int((df_f["ESTADO"]=="En Proceso").sum())
-    n_venc   = int((df_f["FECHA_COMPROMISO"].notna() &
-                    (df_f["FECHA_COMPROMISO"]<HOY_TS) &
-                    ~df_f["ESTADO"].isin(["Completada","Cancelada"])).sum())
+    _mask_venc = (
+        df_f["FECHA_COMPROMISO"].notna() &
+        (df_f["FECHA_COMPROMISO"] < HOY_TS) &
+        ~df_f["ESTADO"].isin(["Completada","Cancelada"])
+    )
+    n_venc = int(_mask_venc.sum())
     st.markdown(
-        f'<div style="display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap;">'
+        f'<div style="display:flex;gap:10px;margin:8px 0 10px;flex-wrap:wrap;">'
         f'<span style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.18);'
         f'border-radius:10px;padding:5px 14px;font-size:0.70rem;font-weight:800;color:{C_CIAN};">'
         f'{n_total} TAREAS</span>'
@@ -848,11 +962,32 @@ elif mod == "Bandeja Operacional":
         f'<span style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.16);'
         f'border-radius:10px;padding:5px 14px;font-size:0.70rem;font-weight:800;color:{C_CIAN};">'
         f'🔄 {n_proc} en proceso</span>'
-        f'<span style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.18);'
-        f'border-radius:10px;padding:5px 14px;font-size:0.70rem;font-weight:800;color:{C_CRITICO};">'
-        f'🔴 {n_venc} vencidas</span>'
         f'</div>',
         unsafe_allow_html=True)
+
+    # ── Vencidas expandibles ───────────────────────────────────────────────────
+    if n_venc > 0:
+        with st.expander(f"🔴 {n_venc} TAREAS VENCIDAS — click para ver", expanded=False):
+            df_venc = df_f[_mask_venc].sort_values("FECHA_COMPROMISO")
+            venc_cols = [c for c in ["TAREA","PROYECTO","PRIORIDAD","ESTADO",
+                                     "FECHA_COMPROMISO","TERCERO","NOTAS"]
+                         if c in df_venc.columns]
+            df_venc_show = df_venc[venc_cols].copy()
+            if "FECHA_COMPROMISO" in df_venc_show.columns:
+                df_venc_show["FECHA_COMPROMISO"] = (
+                    df_venc_show["FECHA_COMPROMISO"].dt.strftime("%d/%m/%Y")
+                )
+            df_venc_show = df_venc_show.rename(columns={"FECHA_COMPROMISO": "VENCIÓ"})
+            st.dataframe(
+                df_venc_show.fillna("—"),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "TAREA":    st.column_config.TextColumn("Tarea", width="large"),
+                    "VENCIÓ":   st.column_config.TextColumn("Venció", width="small"),
+                    "PRIORIDAD":st.column_config.TextColumn("Prioridad", width="small"),
+                },
+            )
 
     # ── Columnas y config del editor ──────────────────────────────────────────
     COLS_EDIT = [c for c in ["ID","TAREA","TIPO","PROYECTO","AREA","CATEGORIA",
