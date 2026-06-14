@@ -558,6 +558,74 @@ if mod == "Centro de Comando":
 
     st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
+    # ── Gráficos ejecutivos ────────────────────────────────────────────────────
+    _gc1, _gc2, _gc3 = st.columns([4, 3, 3])
+
+    with _gc1:
+        seccion("📊", "TASA DE CUMPLIMIENTO", tasa_clr)
+        ec({
+            "backgroundColor": "transparent",
+            "series": [{
+                "type": "gauge",
+                "startAngle": 225, "endAngle": -45,
+                "min": 0, "max": 100,
+                "radius": "90%", "center": ["50%", "60%"],
+                "axisLine": {"lineStyle": {"width": 18,
+                    "color": [[0.4, C_CRITICO], [0.7, C_ALERTA], [1.0, C_OK]]}},
+                "pointer": {"length": "62%", "width": 5,
+                             "itemStyle": {"color": "auto"}},
+                "axisTick": {"show": False},
+                "splitLine": {"show": False},
+                "axisLabel": {"show": False},
+                "detail": {"valueAnimation": True, "formatter": "{value}%",
+                            "color": tasa_clr, "fontSize": 30, "fontWeight": 900,
+                            "offsetCenter": ["0%", "8%"]},
+                "title": {"color": "#475569", "fontSize": 9, "fontWeight": 700,
+                           "offsetCenter": ["0%", "40%"]},
+                "data": [{"value": tasa_s, "name": "ESTA SEMANA"}],
+            }],
+        }, height=215)
+
+    with _gc2:
+        seccion("🔵", "ESTADO ACTIVAS", C_CIAN)
+        _est = ac["ESTADO"].value_counts()
+        ec({
+            "backgroundColor": "transparent",
+            "tooltip": {**_TT, "formatter": "{b}: {c} ({d}%)"},
+            "legend": {"bottom": "0%", "left": "center",
+                       "textStyle": {"color": C_GRIS, "fontSize": 8}},
+            "series": [{"type": "pie", "radius": ["40%", "66%"],
+                        "center": ["50%", "45%"],
+                        "avoidLabelOverlap": True, "label": {"show": False},
+                        "emphasis": {"label": {"show": True, "fontSize": 11,
+                                               "fontWeight": "bold", "color": "#F1F5F9"}},
+                        "data": [{"name": k, "value": int(v),
+                                  "itemStyle": {"color": EST_CLR.get(k, C_GRIS),
+                                                "borderWidth": 2, "borderColor": "#060B15"}}
+                                 for k, v in _est.items()]}],
+        }, height=215)
+
+    with _gc3:
+        seccion("⚠️", "PERFIL DE RIESGO", C_ALERTA)
+        _prio = ac["PRIORIDAD"].value_counts()
+        ec({
+            "backgroundColor": "transparent",
+            "tooltip": {**_TT, "formatter": "{b}: {c} ({d}%)"},
+            "legend": {"bottom": "0%", "left": "center",
+                       "textStyle": {"color": C_GRIS, "fontSize": 8}},
+            "series": [{"type": "pie", "radius": ["40%", "66%"],
+                        "center": ["50%", "45%"],
+                        "avoidLabelOverlap": True, "label": {"show": False},
+                        "emphasis": {"label": {"show": True, "fontSize": 11,
+                                               "fontWeight": "bold", "color": "#F1F5F9"}},
+                        "data": [{"name": k, "value": int(v),
+                                  "itemStyle": {"color": PRIO_CLR.get(k, C_GRIS),
+                                                "borderWidth": 2, "borderColor": "#060B15"}}
+                                 for k, v in _prio.items()]}],
+        }, height=215)
+
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
     # ── Inputs compartidos JS→Python (agenda + calendario) ────────────────────
     # Limpiar widget del rerun anterior ANTES de renderizarlo (regla de Streamlit)
     if st.session_state.pop("_clr_action", False):
@@ -592,6 +660,12 @@ if mod == "Centro de Comando":
                 _mk  = _dfc["ID"] == _tid
                 if _aty == "date":
                     _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val)
+                elif _aty == "field":
+                    _fn, _fv = (_val.split(":", 1) + [""])[:2]
+                    if _fn and _fn in _dfc.columns:
+                        _dfc.loc[_mk, _fn] = _fv
+                        if _fn == "ESTADO" and _fv == "Completada":
+                            _dfc.loc[_mk, "FECHA_CIERRE"] = pd.Timestamp(HOY)
                 else:
                     _dfc.loc[_mk, "ESTADO"] = _val
                     _dfc.loc[_mk, "FECHA_CIERRE"] = (
@@ -605,18 +679,22 @@ if mod == "Centro de Comando":
         except Exception:
             st.session_state["_clr_action"] = True
 
-    # ── Toggle Agenda / Calendario ────────────────────────────────────────────
-    if "cc_view" not in st.session_state:
-        st.session_state["cc_view"] = "agenda"
-    _tv1, _tv2, _tv3 = st.columns([2, 2, 8])
-    with _tv1:
-        if st.button("📌 Agenda", key="btn_vw_ag", use_container_width=True,
-                     type="primary" if st.session_state["cc_view"]=="agenda" else "secondary"):
-            st.session_state["cc_view"] = "agenda"; st.rerun()
-    with _tv2:
-        if st.button("📅 Calendario", key="btn_vw_cal", use_container_width=True,
-                     type="primary" if st.session_state["cc_view"]=="calendario" else "secondary"):
-            st.session_state["cc_view"] = "calendario"; st.rerun()
+    # ── Toggle de vistas ──────────────────────────────────────────────────────
+    _CC_VIEWS = [
+        ("calendario", "📅 Calendario"),
+        ("estado",     "🔷 Estado"),
+        ("prioridad",  "🎯 Prioridad"),
+        ("area",       "📁 Área"),
+        ("categoria",  "🗂 Categoría"),
+    ]
+    if st.session_state.get("cc_view") not in {v for v, _ in _CC_VIEWS}:
+        st.session_state["cc_view"] = "calendario"
+    _tv_cols = st.columns([2]*5 + [2])
+    for _vi, (_vk, _vl) in enumerate(_CC_VIEWS):
+        with _tv_cols[_vi]:
+            if st.button(_vl, key=f"btn_vw_{_vk}", use_container_width=True,
+                         type="primary" if st.session_state["cc_view"]==_vk else "secondary"):
+                st.session_state["cc_view"] = _vk; st.rerun()
     st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
 
     # ── Panel de detalle de tarea ──────────────────────────────────────────────
