@@ -1036,12 +1036,17 @@ if mod == "Centro de Comando":
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;
-     overflow-x:auto;overflow-y:hidden;}}
-.cal{{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:8px;
-     padding:2px;min-width:700px;}}
-.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};
-     border-radius:14px;padding:11px 9px;}}
+html,body{{height:100%;background:transparent;
+           font-family:-apple-system,'Segoe UI',sans-serif;}}
+body{{overflow-x:auto;overflow-y:auto;}}
+.cal{{display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;padding:2px 2px 10px;
+     align-items:flex-start;}}
+::-webkit-scrollbar{{height:5px;width:5px;}}
+::-webkit-scrollbar-track{{background:transparent;}}
+::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
+::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
+.kk{{flex:0 0 160px;width:160px;background:{_TC['card1']};
+     border:1px solid {_TC['border']};border-radius:14px;padding:11px 9px;}}
 .kk-top{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}}
 .kk-hdr{{font-size:0.54rem;font-weight:800;letter-spacing:0.10em;}}
 .kk-num{{font-size:1.30rem;font-weight:900;line-height:1;color:{_TC['nm_clr']};}}
@@ -1189,11 +1194,9 @@ document.querySelectorAll('.kc').forEach(function(c){{
                      "categoria":"🗂","vencidas":"🚨"}
         seccion(_sect_ico.get(_cv,"📋"), f"KANBAN · {_cv.upper()}", C_CIAN)
 
-        # ── Construir columnas ────────────────────────────────────────────────
-        _kn      = len(_kgroups)
-        _min_col = 160 if _kn > 5 else 180
-        _grid_tc = f"repeat({_kn},minmax({_min_col}px,1fr))"
-        _mx_t    = 0
+        # ── Construir columnas (ancho fijo uniforme, scroll horizontal) ──────────
+        _kn   = len(_kgroups)
+        _mx_t = 0
         _dcols_h = ""
         _tok_add = _token()
         for _gval in _kgroups:
@@ -1247,28 +1250,31 @@ document.querySelectorAll('.kc').forEach(function(c){{
                 f'id="dz-{_sg}">{_th2}</div></div>'
             )
 
-        _kh   = max(440, 260 + _mx_t * 92)
-        _tokk = "true" if _token() else "false"
+        _COL_W = 220          # ancho fijo de cada columna (px) — mismo en todas las vistas
+        _kh    = max(440, 260 + _mx_t * 92)
+        _tokk  = "true" if _token() else "false"
         components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;
-     overflow-x:auto;overflow-y:hidden;}}
-.kb{{display:grid;grid-template-columns:{_grid_tc};gap:10px;padding:2px;
-    min-width:{max(600, _kn*170)}px;}}
-.kk{{background:{_TC['card1']};border:1px solid {_TC['border']};
+html,body{{height:100%;background:transparent;
+           font-family:-apple-system,'Segoe UI',sans-serif;}}
+body{{overflow-x:auto;overflow-y:auto;}}
+/* ── fila única de columnas con scroll horizontal ── */
+.kb{{display:flex;flex-direction:row;flex-wrap:nowrap;
+    gap:10px;padding:2px 2px 10px;align-items:flex-start;}}
+.kk{{flex:0 0 {_COL_W}px;width:{_COL_W}px;
+     background:{_TC['card1']};border:1px solid {_TC['border']};
      border-radius:14px;padding:11px 9px;}}
 .kk-top{{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}}
-.kk-hdr{{font-size:0.68rem;font-weight:900;letter-spacing:0.06em;}}
+.kk-hdr{{font-size:0.68rem;font-weight:900;letter-spacing:0.05em;}}
 .kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);
          border-radius:6px;color:{_TC['meta_clr']};cursor:pointer;
          font-size:1rem;font-weight:700;line-height:1;padding:2px 7px;
-         transition:all .15s;}}
+         transition:all .15s;flex-shrink:0;}}
 .kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);
               color:rgb({_ABR});}}
-.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;
-         margin-bottom:9px;}}
+.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;margin-bottom:9px;}}
 .dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;
     padding:3px;transition:all .18s;}}
 .dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
@@ -1289,6 +1295,11 @@ body{{background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;
            background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
 .sortable-ghost{{opacity:.18;transform:scale(.94);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
+/* scrollbar delgado */
+::-webkit-scrollbar{{height:5px;width:5px;}}
+::-webkit-scrollbar-track{{background:transparent;}}
+::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
+::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
 </style></head><body>
 <div class="kb">{_dcols_h}</div>
 <script>
