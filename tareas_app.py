@@ -1018,7 +1018,7 @@ if mod == "Centro de Comando":
                 )
             _add_btn = f'<button class="kk-add" data-field="date" data-group="{_d_str}" title="Agregar tarea">+</button>' if _token() else ''
             _dcols_h += (
-                f'<div class="kk{"kk-today" if _es_h else ""}" '
+                f'<div class="kk{"  kk-today" if _es_h else ""}" '
                 f'style="border-top:3px solid {_hc}{"80" if not _es_h else ""};">'
                 f'<div class="kk-top">'
                 f'<div>'
@@ -1045,7 +1045,7 @@ body{{overflow-x:auto;overflow-y:auto;}}
 ::-webkit-scrollbar-track{{background:transparent;}}
 ::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
 ::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
-.kk{{flex:0 0 160px;width:160px;background:{_TC['card1']};
+.kk{{flex:0 0 220px;width:220px;background:{_TC['card1']};
      border:1px solid {_TC['border']};border-radius:14px;padding:11px 9px;}}
 .kk-top{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}}
 .kk-hdr{{font-size:0.54rem;font-weight:800;letter-spacing:0.10em;}}
