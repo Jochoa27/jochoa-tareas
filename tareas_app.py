@@ -261,21 +261,12 @@ def cargar(mtime):
         data["terceros"] = dt
     except:
         data["terceros"] = pd.DataFrame()
-    try:
-        dr = pd.read_excel(ARCHIVO, sheet_name="REUNIONES")
-        for col in ["FECHA","FECHA_COMP"]:
-            if col in dr.columns:
-                dr[col] = pd.to_datetime(dr[col], errors="coerce").astype("datetime64[us]")
-        data["reuniones"] = dr
-    except:
-        data["reuniones"] = pd.DataFrame()
     return data
 
-mtime  = ARCHIVO.stat().st_mtime if ARCHIVO.exists() else 0
-_data  = cargar(mtime)
+_cache_key = _get_file_cache_key()
+_data  = cargar(_cache_key)
 df_raw = _data.get("tareas", pd.DataFrame())
 df_ter = _data.get("terceros", pd.DataFrame())
-df_reu = _data.get("reuniones", pd.DataFrame())
 
 # ─── BUSINESS LOGIC ───────────────────────────────────────────────────────────
 def _activas():
@@ -332,6 +323,23 @@ def _token():
     except Exception:
         return ""
 
+@st.cache_data(ttl=60)
+def _get_file_cache_key():
+    """SHA del archivo en GitHub (TTL 60 s). Fallback a mtime local."""
+    tok = _token()
+    if tok:
+        try:
+            hdrs = {"Authorization": f"Bearer {tok}",
+                    "Accept": "application/vnd.github+json"}
+            r = requests.get(
+                f"https://api.github.com/repos/{_GH_REPO}/contents/{_GH_FILE}",
+                headers=hdrs, timeout=5)
+            if r.status_code == 200:
+                return r.json()["sha"]
+        except Exception:
+            pass
+    return str(ARCHIVO.stat().st_mtime if ARCHIVO.exists() else 0)
+
 def guardar_github(df_tareas_nuevo):
     """Sobreescribe TAREAS sheet en el repo vía GitHub API y limpia caché."""
     token = _token()
@@ -362,12 +370,9 @@ def guardar_github(df_tareas_nuevo):
         # Eliminar columnas internas
         df_save = df_save.drop(columns=["PRIO_ORD"], errors="ignore")
         df_save.to_excel(writer, sheet_name="TAREAS", index=False)
-        # Preservar otras hojas
         ter_save = df_ter.drop(columns=["DIAS_SIN_RESP"], errors="ignore")
         if not ter_save.empty:
             ter_save.to_excel(writer, sheet_name="TERCEROS", index=False)
-        if not df_reu.empty:
-            df_reu.to_excel(writer, sheet_name="REUNIONES", index=False)
     buf.seek(0)
 
     ts      = pd.Timestamp.now().strftime("%d/%m %H:%M")
@@ -380,6 +385,7 @@ def guardar_github(df_tareas_nuevo):
     r2 = requests.put(api, json=payload, headers=hdrs, timeout=15)
     if r2.status_code in (200, 201):
         cargar.clear()
+        _get_file_cache_key.clear()
         return True, f"Guardado a las {ts}"
     return False, f"Error al guardar ({r2.status_code}): {r2.json().get('message','')}"
 
@@ -511,6 +517,7 @@ MODULOS = [
     ("👥", "Seguimiento de Terceros"),
     ("📈", "Productividad"),
     ("⏱", "Consumo de Tiempo"),
+    ("📊", "Gantt"),
 ]
 
 if "mod" not in st.session_state:
@@ -1005,6 +1012,12 @@ if mod == "Centro de Comando":
                 _pj2 = str(_t.get("PROYECTO","") or "")[:18]
                 _ch2 = "checked" if _dn2 else ""
                 _s2  = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
+                _esf2 = float(_t.get("ESFUERZO_HRS", 0) or 0)
+                _esf2_s = f"{int(_esf2)}h" if _esf2 == int(_esf2) else f"{_esf2:.1f}h"
+                _meta2 = (f'<div class="kc-meta">'
+                          + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
+                          + (f'<span class="kc-hrs">{_esf2_s}</span>' if _esf2 > 0 else '')
+                          + '</div>') if (_pj2 or _esf2 > 0) else ''
                 _th += (
                     f'<div class="kc" data-id="{_ti2}">'
                     f'<div class="kc-top">'
@@ -1013,7 +1026,7 @@ if mod == "Centro de Comando":
                     f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
                     f'</div>'
                     f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
-                    + (f'<div class="kc-meta"><span class="kc-proj">{_pj2}</span></div>' if _pj2 else '')
+                    + _meta2
                     + f'</div>'
                 )
             _add_btn = f'<button class="kk-add" data-field="date" data-group="{_d_str}" title="Agregar tarea">+</button>' if _token() else ''
@@ -1071,6 +1084,8 @@ body{{overflow-x:auto;overflow-y:auto;}}
 .kc-meta{{display:flex;gap:4px;margin-top:4px;}}
 .kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
           border-radius:4px;padding:1px 4px;}}
+.kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;
+         background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
 .sortable-ghost{{opacity:.20;transform:scale(.96);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
@@ -1218,7 +1233,8 @@ document.querySelectorAll('.kc').forEach(function(c){{
                 _pc3 = PRIO_CLR.get(_pr2, C_GRIS)
                 _ch3 = "checked" if _dn2 else ""
                 _sy3 = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
-                # Para vista vencidas: mostrar días de retraso
+                _esf3 = float(_t.get("ESFUERZO_HRS", 0) or 0)
+                _esf3_s = f"{int(_esf3)}h" if _esf3 == int(_esf3) else f"{_esf3:.1f}h"
                 _delay = ""
                 if _cv == "vencidas" and pd.notna(_fc2):
                     _days = (HOY_TS - pd.Timestamp(_fc2)).days
@@ -1234,6 +1250,7 @@ document.querySelectorAll('.kc').forEach(function(c){{
                     f'<div class="kc-meta">'
                     + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
                     + (f'<span class="kc-fc">{_fs2}</span>' if _fs2 else '')
+                    + (f'<span class="kc-hrs">{_esf3_s}</span>' if _esf3 > 0 else '')
                     + _delay
                     + f'</div></div>'
                 )
@@ -1291,6 +1308,8 @@ body{{overflow-x:auto;overflow-y:auto;}}
 .kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
           border-radius:4px;padding:1px 4px;}}
 .kc-fc{{font-size:0.52rem;color:{_TC['meta_clr']};}}
+.kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;
+         background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
 .kc-delay{{font-size:0.52rem;color:#FF4757;font-weight:700;
            background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
 .sortable-ghost{{opacity:.18;transform:scale(.94);}}
@@ -1424,12 +1443,17 @@ document.querySelectorAll('.kc').forEach(function(c){{
                 prchip = (f'<span style="background:#6366F118;color:#6366F1;border:1px solid #6366F130;'
                           f'font-size:0.55rem;font-weight:700;padding:2px 7px;border-radius:20px;">'
                           f'{proj}</span>') if proj else ""
+                esf_ag = float(r.get("ESFUERZO_HRS", 0) or 0)
+                esf_ag_s = f"{int(esf_ag)}h" if esf_ag == int(esf_ag) else f"{esf_ag:.1f}h"
+                esfchip = (f'<span style="background:{C_CIAN}15;color:{C_CIAN};border:1px solid {C_CIAN}30;'
+                           f'font-size:0.55rem;font-weight:700;padding:2px 7px;border-radius:20px;">'
+                           f'⏳ {esf_ag_s}</span>') if esf_ag > 0 else ""
                 cards_html += (
                     f'<div class="sc" data-id="{task_id}" '
                     f'style="background:{bg_c};border:1px solid {brd_c};">'
                     f'<label class="chkw"><input type="checkbox" data-id="{task_id}" {chk_attr}></label>'
                     f'<div class="body">'
-                    f'<div class="chips">{pchip} {tchip} {prchip}</div>'
+                    f'<div class="chips">{pchip} {tchip} {prchip} {esfchip}</div>'
                     f'<div class="nm" style="{nm_sty}">{nm_text}</div>'
                     f'<div class="meta" style="color:{sc_c};">⏱ {sd_t}</div>'
                     f'</div>'
@@ -2251,3 +2275,346 @@ elif mod == "Consumo de Tiempo":
                 f'</div></div>'
                 f'</div>',
                 unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 7: GANTT
+# ══════════════════════════════════════════════════════════════════════════════
+elif mod == "Gantt":
+    st.markdown(
+        f'<div style="background:linear-gradient(100deg,rgba(56,189,248,0.06),transparent);'
+        f'border:1px solid rgba(56,189,248,0.14);border-radius:20px;padding:16px 24px;margin-bottom:18px;">'
+        f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.24em;color:{C_CIAN};">LÍNEA DE TIEMPO · PLANIFICACIÓN Y CONTROL</div>'
+        f'<div style="font-size:1.65rem;font-weight:900;color:#F8FAFC;">📊 GANTT</div>'
+        f'<div style="font-size:0.70rem;color:{C_GRIS};margin-top:3px;">'
+        f'Tareas agrupadas por proyecto · Arrastre el slider inferior para navegar en el tiempo</div>'
+        f'</div>', unsafe_allow_html=True)
+
+    # ── Filtros ───────────────────────────────────────────────────────────────
+    _gf1, _gf2, _gf3, _gf4 = st.columns(4)
+    with _gf1:
+        _g_projs = ["Todos"] + sorted(df_raw["PROYECTO"].dropna().unique().tolist())
+        _g_proj = st.selectbox("Proyecto", _g_projs, key="gantt_proj")
+    with _gf2:
+        _g_prio = st.selectbox("Prioridad", ["Todos","Crítica","Alta","Media","Baja"], key="gantt_prio")
+    with _gf3:
+        _g_est = st.selectbox("Estado", ["Activas","Todas","Completadas"], key="gantt_est")
+    with _gf4:
+        _g_color = st.selectbox("Color por", ["Prioridad","Estado","Proyecto"], key="gantt_color")
+
+    # ── Filtrar datos ─────────────────────────────────────────────────────────
+    _dg = df_raw[~df_raw["ESTADO"].isin(["Cancelada"])].copy()
+    if _g_est == "Activas":
+        _dg = _dg[~_dg["ESTADO"].isin(["Completada"])]
+    elif _g_est == "Completadas":
+        _dg = _dg[_dg["ESTADO"] == "Completada"]
+    if _g_proj != "Todos":
+        _dg = _dg[_dg["PROYECTO"] == _g_proj]
+    if _g_prio != "Todos":
+        _dg = _dg[_dg["PRIORIDAD"] == _g_prio]
+
+    if _dg.empty:
+        st.info("Sin tareas para los filtros seleccionados.")
+    else:
+        # ── Paleta por modo de color ──────────────────────────────────────────
+        _PROJ_COLORS = [
+            "#38BDF8","#A855F7","#10B981","#F59E0B","#F97316",
+            "#EC4899","#06B6D4","#84CC16","#818CF8","#FF4757",
+        ]
+        _proj_list = sorted(_dg["PROYECTO"].dropna().unique().tolist())
+        _proj_clr  = {p: _PROJ_COLORS[i % len(_PROJ_COLORS)] for i, p in enumerate(_proj_list)}
+
+        def _gantt_color(row):
+            if _g_color == "Estado":
+                return EST_CLR.get(str(row.get("ESTADO","Pendiente")), C_GRIS)
+            elif _g_color == "Proyecto":
+                return _proj_clr.get(str(row.get("PROYECTO","")), C_GRIS)
+            else:
+                return PRIO_CLR.get(str(row.get("PRIORIDAD","Media")), C_GRIS)
+
+        # ── Construir y_labels y series_data ─────────────────────────────────
+        _dg = _dg.sort_values(["PROYECTO","PRIO_ORD","FECHA_COMPROMISO"])
+        _y_labels   = []   # list de dicts para yAxis.data
+        _series_data = []  # list de dicts para series[0].data
+
+        for _gproj in _proj_list:
+            _grp = _dg[_dg["PROYECTO"] == _gproj]
+            if _grp.empty:
+                continue
+            # Cabecera de proyecto
+            _y_labels.append({
+                "value": f"◆  {_gproj}",
+                "textStyle": {
+                    "color": _proj_clr.get(_gproj, C_CIAN),
+                    "fontWeight": "bold",
+                    "fontSize": 11,
+                    "padding": [3, 0, 3, 0],
+                },
+            })
+
+            for _, _gr in _grp.iterrows():
+                _y_idx = len(_y_labels)
+
+                _t_start = _gr.get("FECHA_CREACION")
+                _t_end   = _gr.get("FECHA_COMPROMISO")
+                if pd.isna(_t_start):
+                    _t_start = pd.Timestamp(HOY)
+                if str(_gr.get("ESTADO","")) == "Completada" and pd.notna(_gr.get("FECHA_CIERRE")):
+                    _t_end = _gr["FECHA_CIERRE"]
+                if pd.isna(_t_end):
+                    _esf_raw = float(_gr.get("ESFUERZO_HRS", 0) or 0)
+                    _t_end = _t_start + pd.Timedelta(days=max(3, int(_esf_raw)))
+
+                _clr   = _gantt_color(_gr)
+                _estado = str(_gr.get("ESTADO","Pendiente"))
+                _prio   = str(_gr.get("PRIORIDAD","Media"))
+                _esf_v  = float(_gr.get("ESFUERZO_HRS", 0) or 0)
+                _terc_v = str(_gr.get("TERCERO","") or "")
+                _nm_raw = str(_gr["TAREA"])
+
+                _start_ms = int(_t_start.timestamp() * 1000)
+                _end_ms   = int(_t_end.timestamp() * 1000)
+                if _end_ms <= _start_ms:
+                    _end_ms = _start_ms + 2 * 86400 * 1000
+
+                _series_data.append({
+                    "value":     [_y_idx, _start_ms, _end_ms],
+                    "name":      _nm_raw,
+                    "itemStyle": {"color": _clr, "opacity": 0.45 if _estado == "Completada" else 0.90},
+                    "_prio":   _prio,
+                    "_estado": _estado,
+                    "_proj":   _gproj,
+                    "_esf":    _esf_v,
+                    "_terc":   _terc_v,
+                    "_id":     int(_gr.get("ID", 0)),
+                })
+                _y_labels.append({
+                    "value": f"   {_nm_raw[:42]}",
+                    "textStyle": {"color": "#94A3B8", "fontSize": 10},
+                })
+
+        # ── Rango de fechas ───────────────────────────────────────────────────
+        _today_ms = int(pd.Timestamp(HOY).timestamp() * 1000)
+        if _series_data:
+            _all_s = [d["value"][1] for d in _series_data]
+            _all_e = [d["value"][2] for d in _series_data]
+            _xmin  = min(_all_s) - 14 * 86400 * 1000
+            _xmax  = max(_all_e) + 21 * 86400 * 1000
+        else:
+            _xmin = _today_ms - 30 * 86400 * 1000
+            _xmax = _today_ms + 90 * 86400 * 1000
+
+        _zoom_start = max(_xmin, _today_ms - 20 * 86400 * 1000)
+        _zoom_end   = min(_xmax, _today_ms + 70 * 86400 * 1000)
+
+        _n_rows      = len(_y_labels)
+        _row_px      = 30
+        _gantt_h     = max(520, _n_rows * _row_px + 130)
+        _today_label = HOY.strftime("%d/%m/%Y")
+
+        # ── Construir opción ECharts ──────────────────────────────────────────
+        _opt_g = {
+            "backgroundColor": "transparent",
+            "tooltip": {
+                "trigger": "item",
+                "backgroundColor": "rgba(6,11,21,0.97)",
+                "borderColor": f"rgba({_ABR},0.22)",
+                "borderRadius": 12,
+                "padding": [10, 14],
+                "textStyle": {"color": "#F1F5F9", "fontSize": 11},
+                "formatter": "__GT_TT__",
+            },
+            "legend": {
+                "show": _g_color != "Proyecto",
+                "data": (
+                    [{"name":"Crítica","itemStyle":{"color":C_CRITICO}},
+                     {"name":"Alta","itemStyle":{"color":"#FF6B35"}},
+                     {"name":"Media","itemStyle":{"color":C_CIAN}},
+                     {"name":"Baja","itemStyle":{"color":C_GRIS}}]
+                    if _g_color == "Prioridad" else
+                    [{"name":k,"itemStyle":{"color":v}} for k, v in EST_CLR.items()]
+                ),
+                "top": 6, "right": 20,
+                "textStyle": {"color": "#64748B", "fontSize": 10},
+            },
+            "grid": {"top": 50, "bottom": 70, "left": 290, "right": 30},
+            "xAxis": {
+                "type": "time",
+                "min": _xmin,
+                "max": _xmax,
+                "splitLine": {"lineStyle": {"color": "rgba(255,255,255,0.04)", "type": "dashed"}},
+                "axisLabel": {"color": "#64748B", "fontSize": 10, "formatter": "__GT_XFMT__"},
+                "axisLine": {"lineStyle": {"color": "#1E293B"}},
+                "axisTick": {"lineStyle": {"color": "#1E293B"}},
+            },
+            "yAxis": {
+                "type": "category",
+                "data": _y_labels,
+                "inverse": True,
+                "axisLine": {"show": False},
+                "axisTick": {"show": False},
+                "splitLine": {"show": True, "lineStyle": {"color": "rgba(255,255,255,0.025)"}},
+                "axisLabel": {
+                    "color": "#94A3B8",
+                    "fontSize": 10,
+                    "width": 270,
+                    "overflow": "truncate",
+                    "align": "right",
+                    "rich": {},
+                },
+            },
+            "dataZoom": [
+                {
+                    "type": "slider",
+                    "xAxisIndex": 0,
+                    "startValue": _zoom_start,
+                    "endValue": _zoom_end,
+                    "height": 20,
+                    "bottom": 12,
+                    "borderColor": f"rgba({_ABR},0.18)",
+                    "fillerColor": f"rgba({_ABR},0.07)",
+                    "handleStyle": {"color": f"rgb({_ABR})"},
+                    "moveHandleStyle": {"color": f"rgba({_ABR},0.50)"},
+                    "textStyle": {"color": "#475569", "fontSize": 10},
+                    "labelFormatter": "__GT_DZ__",
+                },
+                {"type": "inside", "xAxisIndex": 0, "startValue": _zoom_start, "endValue": _zoom_end},
+            ],
+            "series": [{
+                "type": "custom",
+                "renderItem": "__GT_RENDER__",
+                "encode": {"x": [1, 2], "y": 0},
+                "data": _series_data,
+                "clip": True,
+                "markLine": {
+                    "silent": True,
+                    "symbol": ["none", "none"],
+                    "lineStyle": {"color": "rgba(255,71,87,0.70)", "type": "dashed", "width": 1.5},
+                    "label": {
+                        "show": True,
+                        "position": "insideEndBottom",
+                        "formatter": f"HOY {_today_label}",
+                        "color": "#FF4757",
+                        "fontSize": 9,
+                        "fontWeight": "bold",
+                        "backgroundColor": "rgba(255,71,87,0.12)",
+                        "padding": [2, 5],
+                        "borderRadius": 4,
+                    },
+                    "data": [{"xAxis": _today_ms}],
+                },
+            }],
+        }
+
+        _sg = json.dumps(_opt_g, ensure_ascii=False)
+
+        # Inyectar funciones JS
+        _sg = _sg.replace('"__GT_RENDER__"', r"""function(params, api) {
+    var yIdx = api.value(0);
+    var start = api.coord([api.value(1), yIdx]);
+    var end   = api.coord([api.value(2), yIdx]);
+    var h = Math.max(api.size([0,1])[1] * 0.52, 16);
+    var w = Math.max(end[0] - start[0], 3);
+    var clr = api.visual('color');
+    var children = [{
+        type: 'rect',
+        transition: ['shape'],
+        shape: {x: start[0], y: start[1]-h/2, width: w, height: h, r: 4},
+        style: {fill: clr, shadowBlur: 5, shadowColor: 'rgba(0,0,0,0.30)', shadowOffsetY: 2},
+        emphasis: {style: {shadowBlur: 14, shadowColor: 'rgba(0,0,0,0.50)'}},
+    }];
+    if (w > 38) {
+        children.push({
+            type: 'text',
+            style: {
+                text: params.data.name.length > 22 ? params.data.name.substring(0,20)+'…' : params.data.name,
+                x: start[0]+6, y: start[1],
+                textVerticalAlign: 'middle',
+                fill: 'rgba(255,255,255,0.92)',
+                fontSize: 9, fontWeight: '600',
+                width: w-12, overflow: 'truncate',
+            },
+            silent: true,
+        });
+    }
+    return {type:'group', children: children};
+}""")
+
+        _sg = _sg.replace('"__GT_TT__"', r"""function(p) {
+    if (!p.data || !Array.isArray(p.data.value)) return '';
+    var d = p.data;
+    var fmt = function(ms) {
+        var dt = new Date(ms);
+        return ('0'+dt.getDate()).slice(-2)+'/'+('0'+(dt.getMonth()+1)).slice(-2)+'/'+dt.getFullYear();
+    };
+    var dur = Math.round((d.value[2]-d.value[1])/(86400*1000));
+    return '<div style="max-width:260px;line-height:1.7;">'
+        +'<b style="font-size:12px;color:#F8FAFC;">'+d.name+'</b><br>'
+        +'<span style="color:#64748B;font-size:10px;">📁 '+d._proj+'</span><br>'
+        +'<span style="color:#94A3B8;font-size:10px;">'
+        +d._prio+' &nbsp;·&nbsp; '+d._estado+'</span><br>'
+        +(d._esf>0?'<span style="color:#38BDF8;font-size:10px;">⏳ '+d._esf+'h estimadas</span><br>':'')
+        +(d._terc?'<span style="color:#FFB300;font-size:10px;">👤 '+d._terc+'</span><br>':'')
+        +'<span style="color:#475569;font-size:10px;">📅 '+fmt(d.value[1])+' → '+fmt(d.value[2])
+        +' ('+dur+' días)</span>'
+        +'</div>';
+}""")
+
+        _sg = _sg.replace('"__GT_XFMT__"', r"""function(val) {
+    var d = new Date(val);
+    var m = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return d.getDate()+'\n'+m[d.getMonth()];
+}""")
+
+        _sg = _sg.replace('"__GT_DZ__"', r"""function(val) {
+    var d = new Date(val);
+    var m = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return d.getDate()+' '+m[d.getMonth()];
+}""")
+
+        _html_gantt = (
+            f'<!DOCTYPE html><html><head><meta charset="utf-8">'
+            f'<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>'
+            f'</head>'
+            f'<body style="margin:0;padding:0;background:transparent;">'
+            f'<div id="g" style="width:100%;height:{_gantt_h}px;"></div>'
+            f'<script>'
+            f'var ch=echarts.init(document.getElementById("g"),null,'
+            f'{{renderer:"canvas",width:"auto",height:{_gantt_h}}});'
+            f'ch.setOption({_sg});'
+            f'window.addEventListener("resize",function(){{ch.resize();}});'
+            f'</script>'
+            f'</body></html>'
+        )
+        components.html(_html_gantt, height=_gantt_h + 12, scrolling=True)
+
+        # ── Leyenda de proyectos (si color = Proyecto) ────────────────────────
+        if _g_color == "Proyecto":
+            _leg_h = ""
+            for _pp, _pc in _proj_clr.items():
+                if _pp in _proj_list:
+                    _leg_h += (f'<span style="display:inline-flex;align-items:center;gap:5px;'
+                               f'margin:3px 6px;font-size:0.62rem;font-weight:700;color:{_pc};">'
+                               f'<span style="width:14px;height:8px;border-radius:3px;'
+                               f'background:{_pc};display:inline-block;"></span>{_pp}</span>')
+            st.markdown(
+                f'<div style="display:flex;flex-wrap:wrap;gap:2px;padding:6px 0;">{_leg_h}</div>',
+                unsafe_allow_html=True)
+
+        # ── KPIs de contexto ──────────────────────────────────────────────────
+        st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+        seccion("📋", "RESUMEN DE TAREAS EN VISTA", C_CIAN)
+        _gk1, _gk2, _gk3, _gk4, _gk5 = st.columns(5)
+        _g_venc = _dg[_dg["FECHA_COMPROMISO"].notna() & (_dg["FECHA_COMPROMISO"] < HOY_TS) &
+                      ~_dg["ESTADO"].isin(["Completada"])]
+        _g_comp = _dg[_dg["ESTADO"] == "Completada"]
+        _g_esf_tot = _dg["ESFUERZO_HRS"].fillna(0).sum()
+        with _gk1: st.markdown(kpi("EN VISTA", len(_dg), color=C_CIAN), unsafe_allow_html=True)
+        with _gk2: st.markdown(kpi("COMPLETADAS", len(_g_comp), color=C_OK), unsafe_allow_html=True)
+        with _gk3: st.markdown(kpi("VENCIDAS", len(_g_venc),
+                                    color=C_CRITICO if len(_g_venc) else C_GRIS), unsafe_allow_html=True)
+        with _gk4: st.markdown(kpi("HH ESTIMADAS", f"{_g_esf_tot:.0f}h",
+                                    color=C_MORADO), unsafe_allow_html=True)
+        with _gk5:
+            _g_tasa = round(len(_g_comp) / max(len(_dg), 1) * 100)
+            _g_tclr = C_OK if _g_tasa >= 60 else C_ALERTA if _g_tasa >= 30 else C_CRITICO
+            st.markdown(kpi("% COMPLETADO", f"{_g_tasa}%", color=_g_tclr), unsafe_allow_html=True)
