@@ -263,11 +263,6 @@ def cargar(mtime):
         data["terceros"] = pd.DataFrame()
     return data
 
-_cache_key = _get_file_cache_key()
-_data  = cargar(_cache_key)
-df_raw = _data.get("tareas", pd.DataFrame())
-df_ter = _data.get("terceros", pd.DataFrame())
-
 # ─── BUSINESS LOGIC ───────────────────────────────────────────────────────────
 def _activas():
     return df_raw[~df_raw["ESTADO"].isin(["Completada","Cancelada"])]
@@ -339,6 +334,11 @@ def _get_file_cache_key():
         except Exception:
             pass
     return str(ARCHIVO.stat().st_mtime if ARCHIVO.exists() else 0)
+
+_cache_key = _get_file_cache_key()
+_data  = cargar(_cache_key)
+df_raw = _data.get("tareas", pd.DataFrame())
+df_ter = _data.get("terceros", pd.DataFrame())
 
 def guardar_github(df_tareas_nuevo):
     """Sobreescribe TAREAS sheet en el repo vía GitHub API y limpia caché."""
