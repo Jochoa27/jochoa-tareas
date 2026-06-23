@@ -374,16 +374,21 @@ def guardar_github(df_tareas_nuevo):
         if not ter_save.empty:
             ter_save.to_excel(writer, sheet_name="TERCEROS", index=False)
     buf.seek(0)
+    raw_bytes = buf.read()  # leer una sola vez para API y escritura local
 
     ts      = pd.Timestamp.now().strftime("%d/%m %H:%M")
     payload = {
         "message": f"update: tareas actualizadas desde app ({ts})",
-        "content": base64.b64encode(buf.read()).decode(),
+        "content": base64.b64encode(raw_bytes).decode(),
         "sha":     sha,
         "branch":  _GH_BRANCH,
     }
     r2 = requests.put(api, json=payload, headers=hdrs, timeout=15)
     if r2.status_code in (200, 201):
+        try:
+            ARCHIVO.write_bytes(raw_bytes)  # sincronizar archivo local con GitHub
+        except Exception:
+            pass
         cargar.clear()
         _get_file_cache_key.clear()
         return True, f"Guardado a las {ts}"
