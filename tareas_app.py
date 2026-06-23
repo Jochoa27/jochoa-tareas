@@ -8,6 +8,7 @@ import json
 import base64
 import io
 import requests
+import time
 from pathlib import Path
 from datetime import date, timedelta
 import streamlit.components.v1 as components
@@ -146,7 +147,7 @@ _THEMES = {
     },
 }
 
-_TK   = st.session_state.get("theme", "void")
+_TK   = st.session_state.get("theme", st.query_params.get("theme", "void"))
 _TC   = _THEMES.get(_TK, _THEMES["void"])
 _DARK = _TC["dark"]
 C_BG  = _TC["bg1"]
@@ -437,16 +438,29 @@ def guardar_github(df_tareas_nuevo, df_ter_nuevo=None):
         "sha":     sha,
         "branch":  _GH_BRANCH,
     }
-    r2 = requests.put(api, json=payload, headers=hdrs, timeout=15)
-    if r2.status_code in (200, 201):
+    _delays = [0, 2, 5]  # intentos en segundos: inmediato, 2s, 5s
+    _last_msg = ""
+    for _delay in _delays:
+        if _delay:
+            time.sleep(_delay)
         try:
-            ARCHIVO.write_bytes(raw_bytes)  # sincronizar archivo local con GitHub
-        except Exception:
-            pass
-        cargar.clear()
-        _get_file_cache_key.clear()
-        return True, f"Guardado a las {ts}"
-    return False, f"Error al guardar ({r2.status_code}): {r2.json().get('message','')}"
+            r2 = requests.put(api, json=payload, headers=hdrs, timeout=15)
+            if r2.status_code in (200, 201):
+                try:
+                    ARCHIVO.write_bytes(raw_bytes)
+                except Exception:
+                    pass
+                cargar.clear()
+                _get_file_cache_key.clear()
+                st.session_state.pop("_last_error", None)
+                return True, f"Guardado a las {ts}"
+            _last_msg = f"Error al guardar ({r2.status_code}): {r2.json().get('message','')}"
+        except requests.exceptions.Timeout:
+            _last_msg = "Timeout al conectar con GitHub API"
+        except Exception as _e:
+            _last_msg = f"Error inesperado: {_e}"
+    st.session_state["_last_error"] = _last_msg
+    return False, _last_msg
 
 def _marcar_estado(task_id, nuevo_estado):
     """Cambia el estado de una tarea y guarda en GitHub."""
@@ -678,6 +692,7 @@ with st.sidebar:
             if st.button(f"{'✓' if _tkey==_TK else _tcc['icon']}", key=f"th_{_tkey}",
                          use_container_width=True, help=f"{_tcc['name']} — {_tcc['desc']}"):
                 st.session_state["theme"] = _tkey
+                st.query_params["theme"] = _tkey
                 st.rerun()
 
     # Aviso de token
@@ -691,6 +706,20 @@ with st.sidebar:
             'Agrega GITHUB_TOKEN en Streamlit Cloud → Manage app → Secrets para habilitar '
             'guardar desde la plataforma.</div>'
             '</div>', unsafe_allow_html=True)
+
+    # Último error de guardado
+    _last_err = st.session_state.get("_last_error", "")
+    if _last_err:
+        st.markdown(
+            '<div style="background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.28);'
+            'border-radius:10px;padding:10px 12px;margin-top:8px;">'
+            '<div style="font-size:0.58rem;font-weight:800;color:#FF4757;margin-bottom:4px;">'
+            '❌ ERROR AL GUARDAR</div>'
+            f'<div style="font-size:0.52rem;color:#94A3B8;line-height:1.5;word-break:break-word;">{_last_err}</div>'
+            '</div>', unsafe_allow_html=True)
+        if st.button("✕ Cerrar aviso", key="clr_err", use_container_width=True):
+            st.session_state["_last_error"] = ""
+            st.rerun()
 
 mod = st.session_state.mod
 
