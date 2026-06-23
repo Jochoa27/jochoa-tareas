@@ -1296,13 +1296,17 @@ document.querySelectorAll('.kc').forEach(function(c){{
                         if _tok_add and _cv != "vencidas" else "")
             _ghrs   = float(_gdf["ESFUERZO_HRS"].fillna(0).sum())
             _ghrs_s = (f"{int(_ghrs)}h" if _ghrs == int(_ghrs) else f"{_ghrs:.1f}h") if _ghrs > 0 else ""
-            _gcnt   = f'{len(_gdf)} tareas' + (f' · ⏳ {_ghrs_s}' if _ghrs_s else '')
+            _ghrs_badge = (
+                f'<span style="color:{_gc2};font-size:0.60rem;font-weight:800;'
+                f'background:{_gc2}18;border:1px solid {_gc2}33;'
+                f'border-radius:4px;padding:1px 6px;margin-left:5px;">⏳ {_ghrs_s}</span>'
+            ) if _ghrs_s else ""
             _dcols_h += (
                 f'<div class="kk" style="border-top:3px solid {_gc2}55;">'
                 f'<div class="kk-top">'
                 f'<div class="kk-hdr" style="color:{_gc2};">{_gi} {_gval}</div>'
                 f'{_add_btn}</div>'
-                f'<div class="kk-cnt">{_gcnt}</div>'
+                f'<div class="kk-cnt">{len(_gdf)} tareas{_ghrs_badge}</div>'
                 f'<div class="dz" data-field="{_kfield}" data-group="{_gval}" '
                 f'id="dz-{_sg}">{_th2}</div></div>'
             )
