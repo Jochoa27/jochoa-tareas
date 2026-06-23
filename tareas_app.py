@@ -757,6 +757,24 @@ if mod == "Centro de Comando":
                         else:
                             st.error(_ms_r)
                 st.rerun()
+            # copy: abrir formulario de nueva tarea pre-cargado con datos de la tarea origen
+            if _aty == "copy":
+                _src = df_raw[df_raw["ID"] == int(_pts[1])] if len(_pts) >= 2 else pd.DataFrame()
+                if not _src.empty:
+                    _sr = _src.iloc[0]
+                    st.session_state["add_task_defaults"] = {
+                        "mode":  "copy",
+                        "tarea": str(_sr.get("TAREA", "") or "") + " (copia)",
+                        "proj":  str(_sr.get("PROYECTO", "") or ""),
+                        "tipo":  str(_sr.get("TIPO", "Tarea") or "Tarea"),
+                        "area":  str(_sr.get("AREA", "Trabajo") or "Trabajo"),
+                        "prio":  str(_sr.get("PRIORIDAD", "Media") or "Media"),
+                        "cat":   str(_sr.get("CATEGORIA", "Planificación") or "Planificación"),
+                        "est":   "Pendiente",
+                        "desc":  str(_sr.get("NOTAS", "") or ""),
+                    }
+                st.session_state["_clr_action"] = True
+                st.rerun()
             _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
             _val = _pts[2] if len(_pts) >= 3 else ""
             st.session_state["_clr_action"] = True   # limpiar widget en PRÓXIMO rerun
@@ -789,12 +807,12 @@ if mod == "Centro de Comando":
 
     # ── Toggle de vistas ──────────────────────────────────────────────────────
     _CC_VIEWS = [
-        ("calendario", "📅 Cal."),
-        ("estado",     "🔷 Estado"),
-        ("prioridad",  "🎯 Prio."),
-        ("area",       "📁 Área"),
-        ("categoria",  "🗂 Cat."),
-        ("vencidas",   "🚨 Vencidas"),
+        ("calendario", "📅 Kanban Semana"),
+        ("estado",     "🔷 Kanban Estado"),
+        ("prioridad",  "🎯 Kanban Prioridad"),
+        ("area",       "📁 Kanban Área"),
+        ("categoria",  "🗂 Kanban Categoría"),
+        ("vencidas",   "🚨 Kanban Vencidas"),
     ]
     if st.session_state.get("cc_view") not in {v for v, _ in _CC_VIEWS}:
         st.session_state["cc_view"] = "calendario"
@@ -815,25 +833,32 @@ if mod == "Centro de Comando":
     _OPTS_AREA_NT = ["Trabajo","Personal"]
 
     if st.session_state.get("add_task_defaults") is not None:
-        _ntd    = st.session_state["add_task_defaults"]
-        _nt_fld = _ntd.get("field", "")
-        _nt_val = _ntd.get("value", "")
-        _def_est  = _nt_val if _nt_fld == "ESTADO"    else "Pendiente"
-        _def_prio = _nt_val if _nt_fld == "PRIORIDAD" else "Media"
-        _def_area = _nt_val if _nt_fld == "AREA"      else "Trabajo"
-        _def_cat  = _nt_val if _nt_fld == "CATEGORIA" else "Planificación"
+        _ntd      = st.session_state["add_task_defaults"]
+        _is_copy  = _ntd.get("mode") == "copy"
+        _nt_fld   = _ntd.get("field", "")
+        _nt_val   = _ntd.get("value", "")
+        _def_tarea = _ntd.get("tarea", "") if _is_copy else ""
+        _def_proj  = _ntd.get("proj",  "") if _is_copy else ""
+        _def_tipo  = _ntd.get("tipo", "Tarea") if _is_copy else "Tarea"
+        _def_desc  = _ntd.get("desc",  "") if _is_copy else ""
+        _def_est   = _ntd.get("est",  "Pendiente") if _is_copy else (_nt_val if _nt_fld == "ESTADO"    else "Pendiente")
+        _def_prio  = _ntd.get("prio", "Media")     if _is_copy else (_nt_val if _nt_fld == "PRIORIDAD" else "Media")
+        _def_area  = _ntd.get("area", "Trabajo")   if _is_copy else (_nt_val if _nt_fld == "AREA"      else "Trabajo")
+        _def_cat   = _ntd.get("cat",  "Planificación") if _is_copy else (_nt_val if _nt_fld == "CATEGORIA" else "Planificación")
         try:
             _def_date = pd.Timestamp(_nt_val).date() if _nt_fld == "date" and _nt_val else None
         except Exception:
             _def_date = None
-        seccion("➕", "NUEVA TAREA", C_CIAN)
+        _form_titulo = "DUPLICAR TAREA" if _is_copy else "NUEVA TAREA"
+        seccion("📋" if _is_copy else "➕", _form_titulo, C_CIAN)
         with st.form("frm_add_task", border=False):
             _nt1, _nt2, _nt3 = st.columns([3, 2, 2])
             with _nt1:
-                _nt_tarea = st.text_input("Tarea *", placeholder="Nombre de la tarea...")
-                _nt_proj  = st.text_input("Proyecto", placeholder="Nombre del proyecto")
+                _nt_tarea = st.text_input("Tarea *", value=_def_tarea, placeholder="Nombre de la tarea...")
+                _nt_proj  = st.text_input("Proyecto", value=_def_proj, placeholder="Nombre del proyecto")
             with _nt2:
-                _nt_tipo  = st.selectbox("Tipo", _OPTS_TIPO_NT)
+                _nt_tipo  = st.selectbox("Tipo", _OPTS_TIPO_NT,
+                    index=_OPTS_TIPO_NT.index(_def_tipo) if _def_tipo in _OPTS_TIPO_NT else 0)
                 _nt_area  = st.selectbox("Área", _OPTS_AREA_NT,
                     index=_OPTS_AREA_NT.index(_def_area) if _def_area in _OPTS_AREA_NT else 0)
             with _nt3:
@@ -847,9 +872,9 @@ if mod == "Centro de Comando":
                     index=_OPTS_EST_NT.index(_def_est) if _def_est in _OPTS_EST_NT else 0)
             with _nt5:
                 _nt_fecha = st.date_input("Fecha compromiso", value=_def_date)
-            _nt_desc = st.text_area("Descripción / Notas", height=60, placeholder="Detalle opcional...")
+            _nt_desc = st.text_area("Descripción / Notas", value=_def_desc, height=60, placeholder="Detalle opcional...")
             _ntb1, _ntb2 = st.columns(2)
-            with _ntb1: _nt_sub = st.form_submit_button("➕ Agregar",  use_container_width=True, type="primary")
+            with _ntb1: _nt_sub = st.form_submit_button("📋 Duplicar" if _is_copy else "➕ Agregar", use_container_width=True, type="primary")
             with _ntb2: _nt_cls = st.form_submit_button("✕ Cancelar", use_container_width=True)
         if _nt_cls:
             st.session_state.pop("add_task_defaults", None); st.rerun()
@@ -1060,6 +1085,7 @@ if mod == "Centro de Comando":
                     f'<div class="kc-top">'
                     f'<span class="kc-dot" style="background:{_pc2};"></span>'
                     f'<span class="kc-ico" style="color:{_pc2};">{PRIO_ICO.get(_p2,"")}</span>'
+                    f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
                     f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
                     f'</div>'
                     f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
@@ -1130,6 +1156,9 @@ body{{overflow-x:auto;overflow-y:auto;}}
           border-radius:4px;padding:1px 4px;}}
 .kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;
          background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
+.kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
+        font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
+.kc-cp:hover{{color:rgb({_ABR});}}
 .sortable-ghost{{opacity:.20;transform:scale(.96);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
@@ -1168,6 +1197,12 @@ document.querySelectorAll('.kk-add').forEach(function(btn){{
     if(HT)nfy('newform:date:'+this.dataset.group);
   }});
 }});
+document.querySelectorAll('.kc-cp').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    nfy('copy:'+this.dataset.id+':');
+  }});
+}});
 if(HT){{
   document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
@@ -1182,7 +1217,7 @@ if(HT){{
 var _dbc={{}};
 document.querySelectorAll('.kc').forEach(function(c){{
   c.addEventListener('click',function(e){{
-    if(e.target.closest('.kc-chk'))return;
+    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp'))return;
     var tid=this.dataset.id,now=Date.now();
     if(_dbc[tid]&&(now-_dbc[tid])<380){{_dbc[tid]=0;nfy('open:'+tid+':');}}
     else{{_dbc[tid]=now;}}
@@ -1294,6 +1329,7 @@ document.querySelectorAll('.kc').forEach(function(c){{
                     f'<div class="kc-top">'
                     f'<span class="kc-dot" style="background:{_pc3};"></span>'
                     f'<span class="kc-ico" style="color:{_pc3};">{PRIO_ICO.get(_pr2,"")}</span>'
+                    f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
                     f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch3}>'
                     f'</div>'
                     f'<div class="kc-nm" style="{_sy3}">{_nm2}</div>'
@@ -1369,6 +1405,9 @@ body{{overflow-x:auto;overflow-y:auto;}}
          background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
 .kc-delay{{font-size:0.52rem;color:#FF4757;font-weight:700;
            background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
+.kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
+        font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
+.kc-cp:hover{{color:rgb({_ABR});}}
 .sortable-ghost{{opacity:.18;transform:scale(.94);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
 /* scrollbar delgado */
@@ -1414,6 +1453,12 @@ document.querySelectorAll('.kk-add').forEach(function(btn){{
     if(HT)nfy('newform:'+this.dataset.field+':'+this.dataset.group);
   }});
 }});
+document.querySelectorAll('.kc-cp').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    nfy('copy:'+this.dataset.id+':');
+  }});
+}});
 if(HT){{
   document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
@@ -1428,7 +1473,7 @@ if(HT){{
 var _dbt={{}};
 document.querySelectorAll('.kc').forEach(function(c){{
   c.addEventListener('click',function(e){{
-    if(e.target.closest('.kc-chk'))return;
+    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp'))return;
     var tid=this.dataset.id,now=Date.now();
     if(_dbt[tid]&&(now-_dbt[tid])<380){{_dbt[tid]=0;nfy('open:'+tid+':');}}
     else{{_dbt[tid]=now;}}
