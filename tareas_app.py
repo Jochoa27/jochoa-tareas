@@ -610,9 +610,18 @@ with st.sidebar:
         'color:#334155;text-transform:uppercase;margin-bottom:8px;">NAVEGACIÓN</div>',
         unsafe_allow_html=True)
 
+    # ── Badges de alerta para sidebar ────────────────────────────────────────
+    _ac_sb   = _activas()
+    _venc_sb = len(_ac_sb[_ac_sb["FECHA_COMPROMISO"].notna() & (_ac_sb["FECHA_COMPROMISO"] < HOY_TS)])
+    _terc_sb = len(_ac_sb[_ac_sb["ESTADO"] == "Esperando Terceros"])
     for ico, nombre in MODULOS:
         activo = st.session_state.mod == nombre
-        label  = f"{ico}  {nombre}"
+        _bdg = ""
+        if nombre == "Centro de Comando" and _venc_sb > 0:
+            _bdg = f"  🔴{_venc_sb}"
+        elif nombre == "Seguimiento de Terceros" and _terc_sb > 0:
+            _bdg = f"  🟡{_terc_sb}"
+        label  = f"{ico}  {nombre}{_bdg}"
         if activo:
             st.markdown(
                 f'<div style="background:rgba(56,189,248,0.14);border:1px solid rgba(56,189,248,0.38);'
@@ -764,27 +773,41 @@ if mod == "Centro de Comando":
 
     st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
 
-    # ── Insight accionable ────────────────────────────────────────────────────
-    _ins_ico, _ins_txt, _ins_clr = "📋", f"{len(ac)} tareas activas", C_CIAN
+    # ── Insights accionables (hasta 5 mensajes) ───────────────────────────────
+    _all_ins = []
     if len(venc) > 0:
-        _vn = " · ".join(f'"{t[:30]}"' for t in venc["TAREA"].head(2).tolist())
-        _ins_ico, _ins_txt, _ins_clr = "🔴", f"{len(venc)} tarea{'s' if len(venc)>1 else ''} vencida{'s' if len(venc)>1 else ''} → {_vn}", C_CRITICO
-    elif len(próx) > 0:
-        _px = " · ".join(f'"{t[:30]}"' for t in próx.sort_values("FECHA_COMPROMISO")["TAREA"].head(2).tolist())
-        _ins_ico, _ins_txt, _ins_clr = "⚠️", f"{len(próx)} tarea{'s' if len(próx)>1 else ''} vence{'n' if len(próx)>1 else ''} en ≤3 días → {_px}", C_ALERTA
-    elif len(terc_p) > 0:
-        _ters = " · ".join(str(t) for t in terc_p["TERCERO"].dropna().unique()[:2])
-        _ins_ico, _ins_txt, _ins_clr = "🟡", f"{len(terc_p)} tarea{'s' if len(terc_p)>1 else ''} esperando respuesta{'s' if len(terc_p)>1 else ''}" + (f" de {_ters}" if _ters else ""), C_ALERTA
-    elif tasa_s >= 70:
-        _ins_ico, _ins_txt, _ins_clr = "✅", f"Tasa de cumplimiento {tasa_s}% esta semana — sin alertas activas", C_OK
-    st.markdown(
-        f'<div style="background:{_ins_clr}0D;border-left:3px solid {_ins_clr};'
-        f'border-radius:0 8px 8px 0;padding:7px 14px;margin-bottom:4px;'
-        f'display:flex;align-items:center;gap:8px;">'
-        f'<span style="font-size:0.9rem;flex-shrink:0;">{_ins_ico}</span>'
-        f'<span style="font-size:0.63rem;color:#E2E8F0;font-weight:600;line-height:1.4;">{_ins_txt}</span>'
-        f'</div>',
-        unsafe_allow_html=True)
+        _vn2 = " · ".join(f'"{t[:28]}"' for t in venc["TAREA"].head(2).tolist())
+        _all_ins.append(("🔴", f"{len(venc)} tarea{'s' if len(venc)>1 else ''} vencida{'s' if len(venc)>1 else ''} → {_vn2}", C_CRITICO))
+    if len(próx) > 0:
+        _all_ins.append(("⚠️", f"{len(próx)} tarea{'s' if len(próx)>1 else ''} vence{'n' if len(próx)>1 else ''} en ≤3 días — planificar cierre", C_ALERTA))
+    if len(terc_p) > 0:
+        _ters2 = " · ".join(str(t) for t in terc_p["TERCERO"].dropna().unique()[:2])
+        _all_ins.append(("🟡", f"{len(terc_p)} tarea{'s' if len(terc_p)>1 else ''} esperando tercero" + (f": {_ters2}" if _ters2 else ""), C_ALERTA))
+    _ac_fecha_ins = ac[ac["FECHA_COMPROMISO"].notna()].copy()
+    if not _ac_fecha_ins.empty:
+        _carga_dia = _ac_fecha_ins.groupby("FECHA_COMPROMISO").size()
+        _dia_peak  = _carga_dia.idxmax()
+        if _carga_dia.max() >= 4 and _dia_peak >= HOY_TS:
+            _all_ins.append(("📅", f"{_dia_peak.strftime('%A %d/%m')} tiene {_carga_dia.max()} compromisos — posible sobrecarga", C_ALERTA))
+    if tasa_s < 40 and tasa_s > 0:
+        _all_ins.append(("📉", f"Tasa de cumplimiento {tasa_s}% — por debajo del objetivo (70%)", C_CRITICO))
+    if not _all_ins:
+        _all_ins.append(("✅", f"Sin alertas activas · {len(comp_s)} completadas esta semana · tasa {tasa_s}%", C_OK))
+    _ins_html = ""
+    for _ii, _it, _ic in _all_ins[:5]:
+        _ins_html += (
+            f'<div style="background:{_ic}0D;border-left:3px solid {_ic};'
+            f'border-radius:0 8px 8px 0;padding:6px 14px;margin-bottom:4px;'
+            f'display:flex;align-items:center;gap:8px;">'
+            f'<span style="font-size:0.85rem;flex-shrink:0;">{_ii}</span>'
+            f'<span style="font-size:0.62rem;color:#E2E8F0;font-weight:600;line-height:1.4;">{_it}</span>'
+            f'</div>'
+        )
+    st.markdown(_ins_html, unsafe_allow_html=True)
+
+    # ── Título del tab del browser dinámico ───────────────────────────────────
+    _page_t = f"🔴 {len(venc)} vencidas — Centro de Comando" if len(venc) > 0 else "Centro de Comando · Londres"
+    components.html(f'<script>try{{window.top.document.title="{_page_t}";}}catch(e){{}}</script>', height=0)
 
     st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
@@ -910,6 +933,7 @@ if mod == "Centro de Comando":
 
     # ── Toggle de vistas ──────────────────────────────────────────────────────
     _CC_VIEWS = [
+        ("hoy",        "⚡ HOY"),
         ("calendario", "📅 Kanban Semana"),
         ("estado",     "🔷 Kanban Estado"),
         ("prioridad",  "🎯 Kanban Prioridad"),
@@ -918,7 +942,7 @@ if mod == "Centro de Comando":
         ("vencidas",   "🚨 Kanban Vencidas"),
     ]
     if st.session_state.get("cc_view") not in {v for v, _ in _CC_VIEWS}:
-        st.session_state["cc_view"] = "calendario"
+        st.session_state["cc_view"] = "hoy"
     _tv_cols = st.columns(len(_CC_VIEWS) + 1)
     for _vi, (_vk, _vl) in enumerate(_CC_VIEWS):
         with _tv_cols[_vi]:
@@ -1258,6 +1282,73 @@ if mod == "Centro de Comando":
                         st.session_state.pop("confirm_delete", None); st.rerun()
 
         st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # VISTA HOY — lista priorizada de tareas urgentes del día
+    # ══════════════════════════════════════════════════════════════════════════
+    if st.session_state["cc_view"] == "hoy":
+        seccion("⚡", "VISTA HOY — TAREAS URGENTES", C_CRITICO)
+        _hoy_venc  = ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"] < HOY_TS)].sort_values(
+            "PRIORIDAD", key=lambda x: x.map(PRIO_ORD).fillna(99))
+        _hoy_today = ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"] == HOY_TS)].sort_values(
+            "PRIORIDAD", key=lambda x: x.map(PRIO_ORD).fillna(99))
+        _hoy_3d = ac[
+            ac["FECHA_COMPROMISO"].notna() &
+            (ac["FECHA_COMPROMISO"] > HOY_TS) &
+            (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=3))
+        ].sort_values("FECHA_COMPROMISO")
+        _hoy_ids = set(_hoy_venc["ID"]) | set(_hoy_today["ID"]) | set(_hoy_3d["ID"])
+        _hoy_proc = ac[(ac["ESTADO"] == "En Proceso") & (~ac["ID"].isin(_hoy_ids))].head(10)
+        _secs_hoy = [
+            (_hoy_venc,  C_CRITICO, "🚨 VENCIDAS",           "Atención inmediata requerida"),
+            (_hoy_today, C_CRITICO, "🎯 VENCEN HOY",          "Deben cerrarse hoy"),
+            (_hoy_3d,    C_ALERTA,  "⚠️ PRÓXIMAS ≤3 DÍAS",    "Planificar cierre esta semana"),
+            (_hoy_proc,  C_CIAN,    "▶ EN PROCESO",           "En ejecución actualmente"),
+        ]
+        _total_hoy = sum(len(d) for d, _, _, _ in _secs_hoy)
+        if _total_hoy == 0:
+            st.markdown(
+                f'<div style="background:{C_OK}0D;border:1px solid {C_OK}22;border-radius:12px;'
+                f'padding:36px;text-align:center;margin-top:16px;">'
+                f'<div style="font-size:2rem;">✅</div>'
+                f'<div style="font-size:0.85rem;font-weight:700;color:{C_OK};margin-top:8px;">Día despejado</div>'
+                f'<div style="font-size:0.64rem;color:#64748B;margin-top:4px;">Sin tareas urgentes para hoy</div>'
+                f'</div>', unsafe_allow_html=True)
+        else:
+            for _df_s, _clr, _sec_title, _sec_sub in _secs_hoy:
+                if _df_s.empty:
+                    continue
+                st.markdown(
+                    f'<div style="font-size:0.50rem;font-weight:800;letter-spacing:0.20em;'
+                    f'color:{_clr};margin:14px 0 5px;">{_sec_title}'
+                    f' · {len(_df_s)} tarea{"s" if len(_df_s)>1 else ""}</div>',
+                    unsafe_allow_html=True)
+                for _, _tr in _df_s.iterrows():
+                    _tid  = int(_tr["ID"])
+                    _tnm  = str(_tr.get("TAREA",""))[:65]
+                    _tpj  = str(_tr.get("PROYECTO","") or "")[:22]
+                    _tpc  = PRIO_CLR.get(str(_tr.get("PRIORIDAD","Media")), C_GRIS)
+                    _tfc  = _tr.get("FECHA_COMPROMISO")
+                    _tfc_s = pd.Timestamp(_tfc).strftime("%d/%m") if pd.notna(_tfc) else ""
+                    _esf  = float(_tr.get("ESFUERZO_HRS", 0) or 0)
+                    _esf_s = (f"{int(_esf)}h" if _esf == int(_esf) else f"{_esf:.1f}h") if _esf > 0 else ""
+                    _hc1, _hc2 = st.columns([10, 1])
+                    with _hc1:
+                        st.markdown(
+                            f'<div style="background:{_TC["card2"]};border:1px solid {_clr}22;'
+                            f'border-left:3px solid {_tpc};border-radius:8px;'
+                            f'padding:8px 12px;margin-bottom:3px;">'
+                            f'<div style="font-size:0.72rem;font-weight:700;color:{_TC["nm_clr"]};line-height:1.3;">{_tnm}</div>'
+                            f'<div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">'
+                            + (f'<span style="font-size:0.50rem;color:{_TC["meta_clr"]};background:rgba({_ABR},0.08);border-radius:3px;padding:1px 4px;">{_tpj}</span>' if _tpj else '')
+                            + (f'<span style="font-size:0.50rem;color:rgb({_ABR});font-weight:700;background:rgba({_ABR},0.13);border-radius:3px;padding:1px 4px;">{_esf_s}</span>' if _esf_s else '')
+                            + (f'<span style="font-size:0.50rem;color:{_clr};font-weight:700;">{_tfc_s}</span>' if _tfc_s else '')
+                            + f'</div></div>',
+                            unsafe_allow_html=True)
+                    with _hc2:
+                        if st.button("→", key=f"hoy_{_tid}", use_container_width=True, help="Abrir detalle"):
+                            st.session_state["detalle_id"] = _tid
+                            st.rerun()
 
     # ══════════════════════════════════════════════════════════════════════════
     # VISTA CALENDARIO — mismo formato que kanban, drag cross-day
