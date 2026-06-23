@@ -217,7 +217,7 @@ def cargar(mtime):
         defaults = {
             "DESCRIPCION": "", "TIPO": "Tarea", "CATEGORIA": "Personal",
             "PRIORIDAD": "Media", "ESTADO": "Pendiente",
-            "IMPACTO": 3, "URGENCIA": 3, "ESFUERZO_HRS": 1.0,
+            "IMPACTO": 3, "URGENCIA": 3, "ESFUERZO_HRS": 1.0, "HORAS_REALES": 0.0,
             "TERCERO": "", "PROYECTO": "GENERAL", "AREA": "Trabajo", "NOTAS": "",
         }
         for col, val in defaults.items():
@@ -347,8 +347,8 @@ _data  = cargar(_cache_key)
 df_raw = _data.get("tareas", pd.DataFrame())
 df_ter = _data.get("terceros", pd.DataFrame())
 
-def guardar_github(df_tareas_nuevo):
-    """Sobreescribe TAREAS sheet en el repo vía GitHub API y limpia caché."""
+def guardar_github(df_tareas_nuevo, df_ter_nuevo=None):
+    """Sobreescribe TAREAS (y opcionalmente TERCEROS) en el repo vía GitHub API y limpia caché."""
     token = _token()
     if not token:
         return False, (
@@ -377,7 +377,8 @@ def guardar_github(df_tareas_nuevo):
         # Eliminar columnas internas
         df_save = df_save.drop(columns=["PRIO_ORD"], errors="ignore")
         df_save.to_excel(writer, sheet_name="TAREAS", index=False)
-        ter_save = df_ter.drop(columns=["DIAS_SIN_RESP"], errors="ignore")
+        _ter_base = df_ter_nuevo if df_ter_nuevo is not None else df_ter
+        ter_save  = _ter_base.drop(columns=["DIAS_SIN_RESP"], errors="ignore")
         if not ter_save.empty:
             ter_save.to_excel(writer, sheet_name="TERCEROS", index=False)
     buf.seek(0)
@@ -787,6 +788,21 @@ if mod == "Centro de Comando":
                     }
                 st.session_state["_clr_action"] = True
                 st.rerun()
+            # delete: eliminar tarea permanentemente
+            if _aty == "delete":
+                _del_id = int(_pts[1]) if len(_pts) >= 2 else None
+                st.session_state["_clr_action"] = True
+                if _del_id and _token():
+                    _dfc_del = df_raw[df_raw["ID"] != _del_id].copy()
+                    with st.spinner("Eliminando..."):
+                        _ok_del, _ms_del = guardar_github(_dfc_del)
+                    if _ok_del:
+                        st.toast("✅ Tarea eliminada")
+                        st.session_state.pop("detalle_id", None)
+                        st.rerun()
+                    else:
+                        st.error(_ms_del)
+                st.rerun()
             _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
             _val = _pts[2] if len(_pts) >= 3 else ""
             st.session_state["_clr_action"] = True   # limpiar widget en PRÓXIMO rerun
@@ -1014,9 +1030,17 @@ if mod == "Centro de Comando":
                                                value=int(_r.get("IMPACTO",3) or 3))
                     _new_urg = st.number_input("Urgencia (1-5)", min_value=1, max_value=5, step=1,
                                                value=int(_r.get("URGENCIA",3) or 3))
-                    _new_esf = st.number_input("Esfuerzo (hrs)", min_value=0.0, step=0.5,
+                    _new_esf = st.number_input("Esfuerzo est. (hrs)", min_value=0.0, step=0.5,
                                                format="%.1f",
                                                value=float(_r.get("ESFUERZO_HRS",0) or 0))
+                    _cur_est_det = str(_r.get("ESTADO",""))
+                    _new_hr = st.number_input(
+                        "Horas reales invertidas",
+                        min_value=0.0, step=0.5, format="%.1f",
+                        value=float(_r.get("HORAS_REALES",0) or 0),
+                        help="Registra cuántas horas reales tomó esta tarea",
+                        disabled=(_cur_est_det not in ("Completada","Cancelada")),
+                    )
 
                 _new_notas = st.text_area("Descripción / Notas",
                                           value=str(_r.get("NOTAS","") or ""), height=88)
@@ -1070,6 +1094,7 @@ if mod == "Centro de Comando":
                 _dfc2.loc[_mk2, "IMPACTO"]          = _new_imp
                 _dfc2.loc[_mk2, "URGENCIA"]         = _new_urg
                 _dfc2.loc[_mk2, "ESFUERZO_HRS"]     = _new_esf
+                _dfc2.loc[_mk2, "HORAS_REALES"]     = _new_hr
                 _dfc2.loc[_mk2, "NOTAS"]            = _new_notas
                 if _new_est == "Completada":
                     _cierre_prev = _dfc2.loc[_mk2, "FECHA_CIERRE"].values[0]
@@ -1157,10 +1182,12 @@ if mod == "Centro de Comando":
         ]
         _sf_ac = ac[ac["FECHA_COMPROMISO"].isna()].sort_values("ORDEN")
         # ── Construir columna "Sin fecha" ──────────────────────────────────
+        _SF_ST_ABB = {"Pendiente":"⏸","En Proceso":"▶","Esperando Terceros":"🕐","Completada":"✓","Cancelada":"✗"}
         _sf_th = ""
         for _, _t in _sf_ac.iterrows():
             _ti2 = int(_t["ID"])
-            _dn2 = str(_t.get("ESTADO","")) == "Completada"
+            _est2 = str(_t.get("ESTADO","Pendiente"))
+            _dn2 = _est2 == "Completada"
             _p2  = str(_t.get("PRIORIDAD","Media"))
             _pc2 = PRIO_CLR.get(_p2, C_GRIS)
             _n2  = (str(_t.get("TAREA",""))
@@ -1174,12 +1201,15 @@ if mod == "Centro de Comando":
                       + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
                       + (f'<span class="kc-hrs">{_esf2_s}</span>' if _esf2 > 0 else '')
                       + '</div>') if (_pj2 or _esf2 > 0) else ''
+            _st_abb2 = _SF_ST_ABB.get(_est2, "⏸")
             _sf_th += (
                 f'<div class="kc" data-id="{_ti2}">'
                 f'<div class="kc-top">'
                 f'<span class="kc-dot" style="background:{_pc2};"></span>'
                 f'<span class="kc-ico" style="color:{_pc2};">{PRIO_ICO.get(_p2,"")}</span>'
+                f'<button class="kc-st" data-id="{_ti2}" data-state="{_est2}" title="Cambiar estado">{_st_abb2}</button>'
                 f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
+                f'<button class="kc-del" data-id="{_ti2}" title="Eliminar tarea">🗑</button>'
                 f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
                 f'</div>'
                 f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
@@ -1214,7 +1244,8 @@ if mod == "Centro de Comando":
             _th    = ""
             for _, _t in _td.iterrows():
                 _ti2 = int(_t["ID"])
-                _dn2 = str(_t.get("ESTADO","")) == "Completada"
+                _est2 = str(_t.get("ESTADO","Pendiente"))
+                _dn2 = _est2 == "Completada"
                 _p2  = str(_t.get("PRIORIDAD","Media"))
                 _pc2 = PRIO_CLR.get(_p2, C_GRIS)
                 _n2  = (str(_t.get("TAREA",""))
@@ -1228,12 +1259,15 @@ if mod == "Centro de Comando":
                           + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
                           + (f'<span class="kc-hrs">{_esf2_s}</span>' if _esf2 > 0 else '')
                           + '</div>') if (_pj2 or _esf2 > 0) else ''
+                _st_abb2 = _SF_ST_ABB.get(_est2, "⏸")
                 _th += (
                     f'<div class="kc" data-id="{_ti2}">'
                     f'<div class="kc-top">'
                     f'<span class="kc-dot" style="background:{_pc2};"></span>'
                     f'<span class="kc-ico" style="color:{_pc2};">{PRIO_ICO.get(_p2,"")}</span>'
+                    f'<button class="kc-st" data-id="{_ti2}" data-state="{_est2}" title="Cambiar estado">{_st_abb2}</button>'
                     f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
+                    f'<button class="kc-del" data-id="{_ti2}" title="Eliminar tarea">🗑</button>'
                     f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
                     f'</div>'
                     f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
@@ -1307,6 +1341,15 @@ body{{overflow-x:auto;overflow-y:auto;}}
 .kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
         font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
 .kc-cp:hover{{color:rgb({_ABR});}}
+.kc-st{{background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.22);
+        border-radius:4px;color:#64748B;cursor:pointer;font-size:0.50rem;font-weight:800;
+        line-height:1;padding:2px 4px;flex-shrink:0;transition:all .15s;}}
+.kc-st:hover{{background:rgba({_ABR},0.14);border-color:rgba({_ABR},0.30);color:rgb({_ABR});}}
+.kc-del{{background:transparent;border:none;color:#334155;cursor:pointer;
+         font-size:0.62rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
+.kc-del:hover{{color:#FF4757;}}
+.kc-del.conf{{color:#FF4757!important;font-weight:700;background:rgba(255,71,87,0.10);
+              border-radius:3px;}}
 .sortable-ghost{{opacity:.20;transform:scale(.96);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
@@ -1351,6 +1394,41 @@ document.querySelectorAll('.kc-cp').forEach(function(btn){{
     nfy('copy:'+this.dataset.id+':');
   }});
 }});
+var _ST_CYCLE=['Pendiente','En Proceso','Esperando Terceros','Completada'];
+var _ST_ABB={{'Pendiente':'⏸','En Proceso':'▶','Esperando Terceros':'🕐','Completada':'✓','Cancelada':'✗'}};
+document.querySelectorAll('.kc-st').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    var cur=this.dataset.state||'Pendiente';
+    var idx=_ST_CYCLE.indexOf(cur);
+    var nxt=_ST_CYCLE[(idx+1)%_ST_CYCLE.length];
+    this.dataset.state=nxt;
+    this.textContent=_ST_ABB[nxt]||nxt;
+    nfy('field:'+this.dataset.id+':ESTADO:'+nxt);
+  }});
+}});
+var _del_timer={{}};
+document.querySelectorAll('.kc-del').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    var id=this.dataset.id;
+    if(this.classList.contains('conf')){{
+      clearTimeout(_del_timer[id]);
+      delete _del_timer[id];
+      this.classList.remove('conf');
+      this.textContent='🗑';
+      if(HT)nfy('delete:'+id+':');
+    }}else{{
+      var self=this;
+      this.classList.add('conf');
+      this.textContent='¿OK?';
+      _del_timer[id]=setTimeout(function(){{
+        self.classList.remove('conf');
+        self.textContent='🗑';
+      }},2200);
+    }}
+  }});
+}});
 if(HT){{
   document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
@@ -1365,7 +1443,8 @@ if(HT){{
 var _dbc={{}};
 document.querySelectorAll('.kc').forEach(function(c){{
   c.addEventListener('click',function(e){{
-    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp'))return;
+    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp')||
+       e.target.closest('.kc-st')||e.target.closest('.kc-del'))return;
     var tid=this.dataset.id,now=Date.now();
     if(_dbc[tid]&&(now-_dbc[tid])<380){{_dbc[tid]=0;nfy('open:'+tid+':');}}
     else{{_dbc[tid]=now;}}
@@ -1454,9 +1533,11 @@ document.querySelectorAll('.kc').forEach(function(c){{
             _gi   = _kicons.get(_gval, "")
             _sg   = _gval.replace(" ","-").replace("/","-")
             _th2  = ""
+            _KB_ST_ABB = {"Pendiente":"⏸","En Proceso":"▶","Esperando Terceros":"🕐","Completada":"✓","Cancelada":"✗"}
             for _, _t in _gdf.iterrows():
                 _ti2 = int(_t["ID"])
-                _dn2 = str(_t.get("ESTADO","")) == "Completada"
+                _est3 = str(_t.get("ESTADO","Pendiente"))
+                _dn2 = _est3 == "Completada"
                 _nm2 = (str(_t.get("TAREA",""))
                         .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
                 _pj2 = str(_t.get("PROYECTO","") or "")[:20]
@@ -1472,12 +1553,15 @@ document.querySelectorAll('.kc').forEach(function(c){{
                 if _cv == "vencidas" and pd.notna(_fc2):
                     _days = (HOY_TS - pd.Timestamp(_fc2)).days
                     _delay = f'<span class="kc-delay">−{_days}d</span>'
+                _st_abb3 = _KB_ST_ABB.get(_est3, "⏸")
                 _th2 += (
                     f'<div class="kc" data-id="{_ti2}">'
                     f'<div class="kc-top">'
                     f'<span class="kc-dot" style="background:{_pc3};"></span>'
                     f'<span class="kc-ico" style="color:{_pc3};">{PRIO_ICO.get(_pr2,"")}</span>'
+                    f'<button class="kc-st" data-id="{_ti2}" data-state="{_est3}" title="Cambiar estado">{_st_abb3}</button>'
                     f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
+                    f'<button class="kc-del" data-id="{_ti2}" title="Eliminar tarea">🗑</button>'
                     f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch3}>'
                     f'</div>'
                     f'<div class="kc-nm" style="{_sy3}">{_nm2}</div>'
@@ -1556,6 +1640,15 @@ body{{overflow-x:auto;overflow-y:auto;}}
 .kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
         font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
 .kc-cp:hover{{color:rgb({_ABR});}}
+.kc-st{{background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.22);
+        border-radius:4px;color:#64748B;cursor:pointer;font-size:0.50rem;font-weight:800;
+        line-height:1;padding:2px 4px;flex-shrink:0;transition:all .15s;}}
+.kc-st:hover{{background:rgba({_ABR},0.14);border-color:rgba({_ABR},0.30);color:rgb({_ABR});}}
+.kc-del{{background:transparent;border:none;color:#334155;cursor:pointer;
+         font-size:0.62rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
+.kc-del:hover{{color:#FF4757;}}
+.kc-del.conf{{color:#FF4757!important;font-weight:700;background:rgba(255,71,87,0.10);
+              border-radius:3px;}}
 .sortable-ghost{{opacity:.18;transform:scale(.94);}}
 .sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
 /* scrollbar delgado */
@@ -1607,6 +1700,41 @@ document.querySelectorAll('.kc-cp').forEach(function(btn){{
     nfy('copy:'+this.dataset.id+':');
   }});
 }});
+var _ST_CYCLE=['Pendiente','En Proceso','Esperando Terceros','Completada'];
+var _ST_ABB={{'Pendiente':'⏸','En Proceso':'▶','Esperando Terceros':'🕐','Completada':'✓','Cancelada':'✗'}};
+document.querySelectorAll('.kc-st').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    var cur=this.dataset.state||'Pendiente';
+    var idx=_ST_CYCLE.indexOf(cur);
+    var nxt=_ST_CYCLE[(idx+1)%_ST_CYCLE.length];
+    this.dataset.state=nxt;
+    this.textContent=_ST_ABB[nxt]||nxt;
+    nfy('field:'+this.dataset.id+':ESTADO:'+nxt);
+  }});
+}});
+var _del_timer={{}};
+document.querySelectorAll('.kc-del').forEach(function(btn){{
+  btn.addEventListener('click',function(e){{
+    e.stopPropagation();
+    var id=this.dataset.id;
+    if(this.classList.contains('conf')){{
+      clearTimeout(_del_timer[id]);
+      delete _del_timer[id];
+      this.classList.remove('conf');
+      this.textContent='🗑';
+      if(HT)nfy('delete:'+id+':');
+    }}else{{
+      var self=this;
+      this.classList.add('conf');
+      this.textContent='¿OK?';
+      _del_timer[id]=setTimeout(function(){{
+        self.classList.remove('conf');
+        self.textContent='🗑';
+      }},2200);
+    }}
+  }});
+}});
 if(HT){{
   document.querySelectorAll('.kc-chk').forEach(function(chk){{
     chk.addEventListener('change',function(){{
@@ -1621,7 +1749,8 @@ if(HT){{
 var _dbt={{}};
 document.querySelectorAll('.kc').forEach(function(c){{
   c.addEventListener('click',function(e){{
-    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp'))return;
+    if(e.target.closest('.kc-chk')||e.target.closest('.kc-cp')||
+       e.target.closest('.kc-st')||e.target.closest('.kc-del'))return;
     var tid=this.dataset.id,now=Date.now();
     if(_dbt[tid]&&(now-_dbt[tid])<380){{_dbt[tid]=0;nfy('open:'+tid+':');}}
     else{{_dbt[tid]=now;}}
@@ -2208,6 +2337,101 @@ elif mod == "Diagnóstico de Riesgo":
     st.dataframe(ac_tshow.fillna("—"), use_container_width=True, hide_index=True,
                  height=min(500, 55 + len(ac_tshow)*36))
 
+    # ── B7: Compromisos 30-60-90 días ────────────────────────────────────────
+    seccion("📅", "COMPROMISOS 30 · 60 · 90 DÍAS", C_CRITICO)
+    _ac_fc = _activas().copy()
+    _ac_fc = _ac_fc[_ac_fc["FECHA_COMPROMISO"].notna()].copy()
+    _ac_fc["_dias_hasta"] = (_ac_fc["FECHA_COMPROMISO"].dt.date.apply(
+        lambda d: (d - HOY).days))
+    _b7_30 = _ac_fc[(_ac_fc["_dias_hasta"] >= 0) & (_ac_fc["_dias_hasta"] <= 30)]
+    _b7_60 = _ac_fc[(_ac_fc["_dias_hasta"] > 30) & (_ac_fc["_dias_hasta"] <= 60)]
+    _b7_90 = _ac_fc[(_ac_fc["_dias_hasta"] > 60) & (_ac_fc["_dias_hasta"] <= 90)]
+
+    _b7c1, _b7c2, _b7c3 = st.columns(3)
+    _b7_bands = [
+        (_b7c1, _b7_30, "0–30 días", C_CRITICO),
+        (_b7c2, _b7_60, "31–60 días", C_ALERTA),
+        (_b7c3, _b7_90, "61–90 días", C_CIAN),
+    ]
+    for _col_b7, _df_b7, _lbl_b7, _clr_b7 in _b7_bands:
+        with _col_b7:
+            st.markdown(kpi(f"COMPROMISOS {_lbl_b7}", len(_df_b7),
+                            f"{_df_b7['ESFUERZO_HRS'].sum():.0f}h estimadas" if 'ESFUERZO_HRS' in _df_b7.columns else "",
+                            color=_clr_b7), unsafe_allow_html=True)
+
+    # Gráfico barras: cantidad de compromisos por semana (próximas 13 sem.)
+    _b7_sem_lbl, _b7_sem_cnt, _b7_sem_hrs = [], [], []
+    _b7_cur = HOY - timedelta(days=HOY.weekday())
+    for _wi in range(13):
+        _b7_ini = _b7_cur + timedelta(weeks=_wi)
+        _b7_fin = _b7_ini + timedelta(days=6)
+        _b7_mask = (
+            (_ac_fc["FECHA_COMPROMISO"].dt.date >= _b7_ini) &
+            (_ac_fc["FECHA_COMPROMISO"].dt.date <= _b7_fin)
+        )
+        _b7_sub = _ac_fc[_b7_mask]
+        _b7_sem_lbl.append(f"S{_wi+1}\n{_b7_ini.strftime('%d/%m')}")
+        _b7_sem_cnt.append(int(len(_b7_sub)))
+        _b7_sem_hrs.append(round(float(_b7_sub["ESFUERZO_HRS"].sum()) if "ESFUERZO_HRS" in _b7_sub.columns else 0, 1))
+
+    _b7_col_a, _b7_col_b = st.columns([3, 2])
+    with _b7_col_a:
+        seccion("📊", "COMPROMISOS SEMANALES — PRÓXIMAS 13 SEMANAS", C_CRITICO)
+        _b7_clrs_cnt = [
+            C_CRITICO if c >= 5 else C_ALERTA if c >= 3 else C_CIAN
+            for c in _b7_sem_cnt
+        ]
+        ec({
+            "backgroundColor": "transparent",
+            "tooltip": {**_TT_AXIS},
+            "legend": {"data": ["Tareas", "Horas est."], "bottom": "0%",
+                       "textStyle": {"color": C_GRIS, "fontSize": 9}},
+            "grid": {"left": "20px", "right": "20px", "top": "10px", "bottom": "34px", "containLabel": True},
+            "xAxis": {**_axis(), "type": "category", "data": _b7_sem_lbl,
+                      "axisLabel": {"color": "#94A3B8", "fontSize": 8}},
+            "yAxis": [
+                {**_axis(), "type": "value", "name": "Tareas",
+                 "nameTextStyle": {"color": C_GRIS, "fontSize": 8}},
+                {**_axis(), "type": "value", "name": "Horas", "position": "right",
+                 "nameTextStyle": {"color": C_MORADO, "fontSize": 8}},
+            ],
+            "series": [
+                {"name": "Tareas", "type": "bar", "barMaxWidth": "24px", "yAxisIndex": 0,
+                 "data": [{"value": v, "itemStyle": {"color": _b7_clrs_cnt[i], "borderRadius": [4, 4, 0, 0]}}
+                          for i, v in enumerate(_b7_sem_cnt)],
+                 "label": {"show": True, "position": "top", "color": "#94A3B8", "fontSize": 8}},
+                {"name": "Horas est.", "type": "line", "yAxisIndex": 1,
+                 "data": _b7_sem_hrs,
+                 "lineStyle": {"color": C_MORADO, "width": 2},
+                 "itemStyle": {"color": C_MORADO},
+                 "symbol": "circle", "symbolSize": 5, "smooth": True},
+            ],
+        }, height=260)
+
+    with _b7_col_b:
+        seccion("🗓", "DÍAS CRÍTICOS (3+ compromisos)", C_CRITICO)
+        _b7_dias = {}
+        for _, _rr in _ac_fc.iterrows():
+            _fd = _rr["FECHA_COMPROMISO"].date()
+            if 0 <= (_fd - HOY).days <= 90:
+                _b7_dias.setdefault(_fd, []).append(str(_rr.get("TAREA", ""))[:24])
+        _dias_crit = {d: t for d, t in sorted(_b7_dias.items()) if len(t) >= 3}
+        if _dias_crit:
+            for _dc, _tc in list(_dias_crit.items())[:8]:
+                _dias_n = (_dc - HOY).days
+                _dc_clr = C_CRITICO if _dias_n <= 7 else C_ALERTA if _dias_n <= 30 else C_CIAN
+                st.markdown(
+                    f'<div style="background:rgba(13,21,38,0.80);border:1px solid {_dc_clr}33;'
+                    f'border-radius:10px;padding:9px 12px;margin-bottom:6px;">'
+                    f'<div style="font-size:0.62rem;font-weight:800;color:{_dc_clr};">'
+                    f'📅 {_dc.strftime("%d/%m/%Y")} · {_dias_n}d · {len(_tc)} tareas</div>'
+                    f'<div style="font-size:0.56rem;color:#94A3B8;margin-top:3px;">'
+                    + " · ".join(_tc[:4]) + ("…" if len(_tc) > 4 else "") +
+                    f'</div></div>',
+                    unsafe_allow_html=True)
+        else:
+            st.info("No hay días con 3+ compromisos en los próximos 90 días.", icon="✅")
+
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 3: BANDEJA OPERACIONAL
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2503,7 +2727,10 @@ elif mod == "Seguimiento de Terceros":
         prom_dias = int(pend_t[dias_col].mean()) if dias_col in pend_t.columns and not pend_t.empty else 0
         crit_t = pend_t[pend_t.get("PRIORIDAD","") == "Alta"] if "PRIORIDAD" in pend_t.columns else pd.DataFrame()
 
-        c1,c2,c3,c4 = st.columns(4)
+        sin_contacto_7 = int((pend_t[dias_col] >= 7).sum()) if dias_col in pend_t.columns else 0
+        sc7_clr = C_CRITICO if sin_contacto_7 > 0 else C_OK
+
+        c1,c2,c3,c4,c5 = st.columns(5)
         with c1: st.markdown(kpi("TERCEROS ACTIVOS",  len(pend_t),
                                   color=C_ALERTA if len(pend_t) else C_GRIS),    unsafe_allow_html=True)
         with c2: st.markdown(kpi("DÍAS PROM. ESPERA", f"{prom_dias}d",
@@ -2512,19 +2739,87 @@ elif mod == "Seguimiento de Terceros":
                                   color=C_CRITICO if len(crit_t) else C_GRIS),  unsafe_allow_html=True)
         with c4: st.markdown(kpi("RESUELTOS",
                                   len(df_ter)-len(pend_t), color=C_OK),         unsafe_allow_html=True)
+        with c5: st.markdown(kpi("SIN CONTACTO +7d",  sin_contacto_7,
+                                  "requieren seguimiento", color=sc7_clr),      unsafe_allow_html=True)
+
+        if sin_contacto_7 > 0:
+            _nom_sc7 = pend_t[pend_t[dias_col] >= 7]["NOMBRE"].tolist() if "NOMBRE" in pend_t.columns else []
+            st.warning(
+                f"⚠️ **{sin_contacto_7} tercero{'s' if sin_contacto_7>1 else ''} sin contacto hace 7+ días:** "
+                + ", ".join(_nom_sc7[:5]) + ("…" if len(_nom_sc7) > 5 else ""),
+                icon="⚠️",
+            )
 
         st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
         seccion("📊", "ESTADO DE TERCEROS", C_ALERTA)
 
-        # Tabla de terceros con color
-        df_ter_show = df_ter.copy()
-        for col in ["FECHA_INICIO_SEG","FECHA_ULTIMO_SEG"]:
-            if col in df_ter_show.columns:
-                df_ter_show[col] = df_ter_show[col].dt.strftime("%d/%m/%Y").fillna("—")
-        cols_show = [c for c in ["NOMBRE","ORGANIZACION","ROL","TEMA_PENDIENTE",
-                                  "FECHA_ULTIMO_SEG","DIAS_SIN_RESP","ESTADO","PRIORIDAD","NOTAS"]
-                     if c in df_ter_show.columns]
-        st.dataframe(df_ter_show[cols_show].fillna("—"), use_container_width=True, hide_index=True)
+        # ── Tabla editable de terceros ────────────────────────────────────────
+        _ter_edit_cols = [c for c in ["NOMBRE","ORGANIZACION","ROL","TEMA_PENDIENTE",
+                                       "FECHA_ULTIMO_SEG","ESTADO","PRIORIDAD","NOTAS"]
+                          if c in df_ter.columns]
+        _ter_ed_df = df_ter[_ter_edit_cols].copy()
+        for _fc in ["FECHA_ULTIMO_SEG"]:
+            if _fc in _ter_ed_df.columns:
+                _ter_ed_df[_fc] = pd.to_datetime(_ter_ed_df[_fc], errors="coerce")
+
+        _col_cfg_ter = {}
+        if "ESTADO" in _ter_ed_df.columns:
+            _col_cfg_ter["ESTADO"] = st.column_config.SelectboxColumn(
+                "Estado", options=["Pendiente", "En Seguimiento", "Resuelto", "Bloqueado"], required=True)
+        if "PRIORIDAD" in _ter_ed_df.columns:
+            _col_cfg_ter["PRIORIDAD"] = st.column_config.SelectboxColumn(
+                "Prioridad", options=["Alta", "Media", "Baja"], required=True)
+        if "FECHA_ULTIMO_SEG" in _ter_ed_df.columns:
+            _col_cfg_ter["FECHA_ULTIMO_SEG"] = st.column_config.DateColumn("Último seguimiento", format="DD/MM/YYYY")
+
+        _ter_edited = st.data_editor(
+            _ter_ed_df, use_container_width=True, hide_index=True,
+            column_config=_col_cfg_ter, num_rows="fixed",
+            key="ter_data_editor",
+        )
+
+        # Botones de acción
+        _tb1, _tb2, _tb3 = st.columns([2, 2, 6])
+        with _tb1:
+            if st.button("💾 Guardar cambios", key="btn_ter_save", use_container_width=True,
+                         type="primary"):
+                if _token():
+                    _ter_upd = df_ter.copy()
+                    for _ec in _ter_edit_cols:
+                        if _ec in _ter_edited.columns:
+                            _ter_upd[_ec] = _ter_edited[_ec].values
+                    with st.spinner("Guardando terceros..."):
+                        _ok_ter, _ms_ter = guardar_github(df_raw, df_ter_nuevo=_ter_upd)
+                    if _ok_ter:
+                        st.toast("✅ Terceros guardados")
+                        st.rerun()
+                    else:
+                        st.error(_ms_ter)
+                else:
+                    st.error("Token no configurado")
+        with _tb2:
+            if st.button("📅 Registrar seg. hoy", key="btn_ter_hoy", use_container_width=True):
+                _ter_sel = st.session_state.get("ter_data_editor", {}).get("selected_rows", [])
+                if not _ter_sel:
+                    st.info("Selecciona filas en la tabla para registrar seguimiento de hoy.", icon="ℹ️")
+                else:
+                    if _token():
+                        _ter_upd2 = df_ter.copy()
+                        for _ri in _ter_sel:
+                            _ter_upd2.loc[_ri, "FECHA_ULTIMO_SEG"] = pd.Timestamp(HOY)
+                        with st.spinner("Actualizando..."):
+                            _ok2, _ms2 = guardar_github(df_raw, df_ter_nuevo=_ter_upd2)
+                        if _ok2:
+                            st.toast("✅ Seguimiento registrado")
+                            st.rerun()
+                        else:
+                            st.error(_ms2)
+        # DIAS_SIN_RESP se muestra aparte (calculado, no editable)
+        if dias_col in df_ter.columns:
+            _dias_show = df_ter[["NOMBRE", dias_col]].copy() if "NOMBRE" in df_ter.columns else df_ter[[dias_col]].copy()
+            _dias_show = _dias_show.rename(columns={dias_col: "Días sin resp."})
+            st.caption("Días sin respuesta (calculado automáticamente):")
+            st.dataframe(_dias_show, use_container_width=True, hide_index=True, height=120)
 
         # Gráfico: días por tercero
         if dias_col in pend_t.columns and not pend_t.empty and "NOMBRE" in pend_t.columns:
@@ -2799,6 +3094,103 @@ elif mod == "Consumo de Tiempo":
                              "label":{"show":True,"position":"right","color":"#94A3B8","fontSize":9,
                                       "formatter":"{c}h"}}],
             }, height=290)
+
+        # ── B5: Estimado vs Real ─────────────────────────────────────────────
+        df_all = cargar()
+        comp_b5 = df_all[
+            (df_all["ESTADO"].isin(["Completada", "Cancelada"])) &
+            (df_all["HORAS_REALES"].notna()) &
+            (df_all["HORAS_REALES"] > 0) &
+            (df_all["ESFUERZO_HRS"].notna()) &
+            (df_all["ESFUERZO_HRS"] > 0)
+        ].copy()
+
+        if not comp_b5.empty:
+            seccion("⚖️", "ESTIMADO vs REAL (TAREAS COMPLETADAS)", C_MORADO)
+            tot_est_b5  = float(comp_b5["ESFUERZO_HRS"].sum())
+            tot_real_b5 = float(comp_b5["HORAS_REALES"].sum())
+            ratio_b5    = tot_real_b5 / tot_est_b5 if tot_est_b5 > 0 else 1.0
+            ratio_lbl   = f"{ratio_b5:.2f}×"
+            ratio_clr   = C_OK if ratio_b5 <= 1.05 else (C_ALERTA if ratio_b5 <= 1.30 else C_RIESGO)
+            ratio_txt   = "Bajo presupuesto" if ratio_b5 <= 1.0 else ("Leve sobreestimación" if ratio_b5 <= 1.30 else "Alta desviación")
+
+            kb1, kb2, kb3 = st.columns(3)
+            with kb1:
+                st.markdown(kpi("TOTAL ESTIMADO", f"{tot_est_b5:.1f}h",
+                                f"{len(comp_b5)} tareas completadas", color=C_MORADO), unsafe_allow_html=True)
+            with kb2:
+                st.markdown(kpi("TOTAL REAL INVERTIDO", f"{tot_real_b5:.1f}h",
+                                f"Δ {tot_real_b5-tot_est_b5:+.1f}h vs estimado", color=C_CIAN), unsafe_allow_html=True)
+            with kb3:
+                st.markdown(kpi("RATIO DE EFICIENCIA", ratio_lbl,
+                                ratio_txt, color=ratio_clr), unsafe_allow_html=True)
+
+            st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+            # Barras agrupadas por categoría
+            cat_b5 = comp_b5.groupby("CATEGORIA").agg(
+                est=("ESFUERZO_HRS", "sum"), real=("HORAS_REALES", "sum")
+            ).sort_values("est", ascending=False)
+
+            if not cat_b5.empty:
+                col_b5a, col_b5b = st.columns([3, 2])
+                with col_b5a:
+                    seccion("📊", "ESTIMADO VS REAL POR CATEGORÍA", C_MORADO)
+                    _b5_cats = cat_b5.index.tolist()
+                    _b5_est  = [round(float(v), 1) for v in cat_b5["est"]]
+                    _b5_real = [round(float(v), 1) for v in cat_b5["real"]]
+                    ec({
+                        "backgroundColor": "transparent",
+                        "tooltip": {**_TT_AXIS},
+                        "legend": {"data": ["Estimado", "Real"],
+                                   "textStyle": {"color": C_GRIS, "fontSize": 9},
+                                   "bottom": "0%"},
+                        "grid": {"left": "20px", "right": "20px", "top": "10px", "bottom": "30px",
+                                 "containLabel": True},
+                        "xAxis": {**_axis(), "type": "category", "data": _b5_cats,
+                                  "axisLabel": {"color": "#94A3B8", "fontSize": 9, "rotate": 20}},
+                        "yAxis": {**_axis(), "type": "value", "name": "Horas",
+                                  "nameTextStyle": {"color": C_GRIS, "fontSize": 9}},
+                        "series": [
+                            {"name": "Estimado", "type": "bar", "barMaxWidth": "28px",
+                             "data": [{"value": v, "itemStyle": {"color": C_MORADO, "borderRadius": [4, 4, 0, 0]}}
+                                      for v in _b5_est],
+                             "label": {"show": True, "position": "top", "color": "#94A3B8",
+                                       "fontSize": 8, "formatter": "{c}h"}},
+                            {"name": "Real", "type": "bar", "barMaxWidth": "28px",
+                             "data": [{"value": v, "itemStyle": {
+                                           "color": C_OK if _b5_real[i] <= _b5_est[i] * 1.05
+                                           else (C_ALERTA if _b5_real[i] <= _b5_est[i] * 1.30 else C_RIESGO),
+                                           "borderRadius": [4, 4, 0, 0]}}
+                                      for i, v in enumerate(_b5_real)],
+                             "label": {"show": True, "position": "top", "color": "#94A3B8",
+                                       "fontSize": 8, "formatter": "{c}h"}},
+                        ],
+                    }, height=280)
+
+                with col_b5b:
+                    seccion("📋", "TABLA DE EFICIENCIA", C_MORADO)
+                    _tbl_rows = []
+                    for cat_nm, row in cat_b5.iterrows():
+                        _r_b5 = row["real"] / row["est"] if row["est"] > 0 else 1.0
+                        _ic   = "🟢" if _r_b5 <= 1.05 else ("🟡" if _r_b5 <= 1.30 else "🔴")
+                        _tbl_rows.append({
+                            "Categoría": cat_nm,
+                            "Est (h)": f'{row["est"]:.1f}',
+                            "Real (h)": f'{row["real"]:.1f}',
+                            "Ratio": f'{_r_b5:.2f}×',
+                            "": _ic,
+                        })
+                    if _tbl_rows:
+                        import pandas as _pd_b5
+                        st.dataframe(
+                            _pd_b5.DataFrame(_tbl_rows),
+                            use_container_width=True, hide_index=True,
+                            height=min(38 * len(_tbl_rows) + 40, 280),
+                        )
+        else:
+            st.info("Aún no hay tareas completadas con horas reales registradas. "
+                    "Completa una tarea e ingresa las horas reales en el panel de detalle.", icon="ℹ️")
 
         # Trabajo vs Personal
         if not area_hrs.empty:
