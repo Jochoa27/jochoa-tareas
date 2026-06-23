@@ -1067,6 +1067,12 @@ if mod == "Centro de Comando":
                     + f'</div>'
                 )
             _add_btn = f'<button class="kk-add" data-field="date" data-group="{_d_str}" title="Agregar tarea">+</button>' if _token() else ''
+            _dhrs   = float(_td["ESFUERZO_HRS"].fillna(0).sum())
+            _dhrs_s = (f"{int(_dhrs)}h" if _dhrs == int(_dhrs) else f"{_dhrs:.1f}h") if _dhrs > 0 else ""
+            _dbs    = (f'color:{_hc};font-size:0.65rem;font-weight:800;background:{_hc}18;'
+                       f'border:1px solid {_hc}44;border-radius:5px;padding:2px 8px;')
+            _dcnt_b = f'<span style="{_dbs}">{len(_td)} tareas</span>'
+            _dhrs_b = f'<span style="{_dbs}">⏳ {_dhrs_s}</span>' if _dhrs_s else ""
             _dcols_h += (
                 f'<div class="kk{"  kk-today" if _es_h else ""}" '
                 f'style="border-top:3px solid {_hc}{"80" if not _es_h else ""};">'
@@ -1076,7 +1082,8 @@ if mod == "Centro de Comando":
                 f'<div class="kk-num">{_d.day}</div>'
                 f'</div>'
                 f'{_add_btn}</div>'
-                f'<div class="kk-cnt">{len(_td)}</div>'
+                f'<div class="kk-cnt" style="display:flex;gap:5px;flex-wrap:wrap;">'
+                f'{_dcnt_b}{_dhrs_b}</div>'
                 f'<div class="dz" data-date="{_d_str}" data-field="date" '
                 f'data-group="{_d_str}" id="dz{_d_str}">{_th}</div></div>'
             )
