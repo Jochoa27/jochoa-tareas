@@ -772,6 +772,8 @@ if mod == "Centro de Comando":
                         "cat":   str(_sr.get("CATEGORIA", "Planificación") or "Planificación"),
                         "est":   "Pendiente",
                         "desc":  str(_sr.get("NOTAS", "") or ""),
+                        "ter":   str(_sr.get("TERCERO", "") or ""),
+                        "esf":   float(_sr.get("ESFUERZO_HRS", 0) or 0),
                     }
                 st.session_state["_clr_action"] = True
                 st.rerun()
@@ -785,7 +787,7 @@ if mod == "Centro de Comando":
                 _dfc = df_raw.copy()
                 _mk  = _dfc["ID"] == _tid
                 if _aty == "date":
-                    _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val)
+                    _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val) if _val.strip() else pd.NaT
                 elif _aty == "field":
                     _fn, _fv = (_val.split(":", 1) + [""])[:2]
                     if _fn and _fn in _dfc.columns:
@@ -816,13 +818,46 @@ if mod == "Centro de Comando":
     ]
     if st.session_state.get("cc_view") not in {v for v, _ in _CC_VIEWS}:
         st.session_state["cc_view"] = "calendario"
-    _tv_cols = st.columns(len(_CC_VIEWS))
+    _tv_cols = st.columns(len(_CC_VIEWS) + 1)
     for _vi, (_vk, _vl) in enumerate(_CC_VIEWS):
         with _tv_cols[_vi]:
             if st.button(_vl, key=f"btn_vw_{_vk}", use_container_width=True,
                          type="primary" if st.session_state["cc_view"]==_vk else "secondary"):
                 st.session_state["cc_view"] = _vk; st.rerun()
+    with _tv_cols[len(_CC_VIEWS)]:
+        if st.button("➕ Nueva tarea", key="btn_global_new", use_container_width=True, type="secondary"):
+            st.session_state["add_task_defaults"] = {"mode": "new"}
+            st.rerun()
     st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+    # ── Filtros globales del Centro de Comando ────────────────────────────────
+    _filt1, _filt2 = st.columns([3, 2])
+    with _filt1:
+        _cc_srch = st.text_input("", value=st.session_state.get("cc_search", ""),
+                                  placeholder="🔍 Buscar tarea, proyecto o descripción...",
+                                  key="cc_search_inp", label_visibility="collapsed")
+        st.session_state["cc_search"] = _cc_srch
+    with _filt2:
+        _projs_cc = ["Todos los proyectos"] + sorted([p for p in ac["PROYECTO"].dropna().unique() if str(p).strip()])
+        _cur_proj = st.session_state.get("cc_proj", "Todos los proyectos")
+        if _cur_proj not in _projs_cc:
+            _cur_proj = "Todos los proyectos"
+        _cc_proj = st.selectbox("", _projs_cc, key="cc_proj_sel",
+                                 label_visibility="collapsed",
+                                 index=_projs_cc.index(_cur_proj))
+        st.session_state["cc_proj"] = _cc_proj
+    # Aplicar filtros a 'ac' (KPIs ya calculados arriba no se ven afectados)
+    if _cc_srch.strip():
+        _q = _cc_srch.strip()
+        _mask_srch = (
+            ac["TAREA"].str.contains(_q, case=False, na=False) |
+            ac["PROYECTO"].str.contains(_q, case=False, na=False)
+        )
+        if "DESCRIPCION" in ac.columns:
+            _mask_srch = _mask_srch | ac["DESCRIPCION"].str.contains(_q, case=False, na=False)
+        ac = ac[_mask_srch]
+    if _cc_proj != "Todos los proyectos":
+        ac = ac[ac["PROYECTO"] == _cc_proj]
 
     # ── Formulario nueva tarea (abierto por "+" de kanban / calendario) ────────
     _OPTS_EST_NT  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
@@ -845,6 +880,8 @@ if mod == "Centro de Comando":
         _def_prio  = _ntd.get("prio", "Media")     if _is_copy else (_nt_val if _nt_fld == "PRIORIDAD" else "Media")
         _def_area  = _ntd.get("area", "Trabajo")   if _is_copy else (_nt_val if _nt_fld == "AREA"      else "Trabajo")
         _def_cat   = _ntd.get("cat",  "Planificación") if _is_copy else (_nt_val if _nt_fld == "CATEGORIA" else "Planificación")
+        _def_ter   = _ntd.get("ter",  "") if _is_copy else ""
+        _def_esf   = float(_ntd.get("esf", 0.0) or 0.0) if _is_copy else 0.0
         try:
             _def_date = pd.Timestamp(_nt_val).date() if _nt_fld == "date" and _nt_val else None
         except Exception:
@@ -866,13 +903,20 @@ if mod == "Centro de Comando":
                     index=_OPTS_PRIO_NT.index(_def_prio) if _def_prio in _OPTS_PRIO_NT else 2)
                 _nt_cat   = st.selectbox("Categoría", _OPTS_CAT_NT,
                     index=_OPTS_CAT_NT.index(_def_cat) if _def_cat in _OPTS_CAT_NT else 0)
-            _nt4, _nt5 = st.columns([2, 1])
+            _nt4, _nt5, _nt6 = st.columns([2, 2, 1])
             with _nt4:
                 _nt_est   = st.selectbox("Estado", _OPTS_EST_NT,
                     index=_OPTS_EST_NT.index(_def_est) if _def_est in _OPTS_EST_NT else 0)
             with _nt5:
+                _nt_ter   = st.text_input("Tercero", value=_def_ter, placeholder="Nombre del tercero...")
+            with _nt6:
                 _nt_fecha = st.date_input("Fecha compromiso", value=_def_date)
-            _nt_desc = st.text_area("Descripción / Notas", value=_def_desc, height=60, placeholder="Detalle opcional...")
+            _nt7a, _nt7b = st.columns([3, 1])
+            with _nt7b:
+                _nt_esf = st.number_input("Esfuerzo (hrs)", min_value=0.0, step=0.5,
+                                          format="%.1f", value=_def_esf)
+            with _nt7a:
+                _nt_desc = st.text_area("Descripción / Notas", value=_def_desc, height=60, placeholder="Detalle opcional...")
             _ntb1, _ntb2 = st.columns(2)
             with _ntb1: _nt_sub = st.form_submit_button("📋 Duplicar" if _is_copy else "➕ Agregar", use_container_width=True, type="primary")
             with _ntb2: _nt_cls = st.form_submit_button("✕ Cancelar", use_container_width=True)
@@ -888,6 +932,7 @@ if mod == "Centro de Comando":
                 _nrow = {"ID":_nid,"TAREA":_nt_tarea.strip(),"TIPO":_nt_tipo,
                          "PROYECTO":_nt_proj.strip(),"AREA":_nt_area,"CATEGORIA":_nt_cat,
                          "PRIORIDAD":_nt_prio,"ESTADO":_nt_est,
+                         "TERCERO":_nt_ter.strip(),"ESFUERZO_HRS":_nt_esf,
                          "FECHA_COMPROMISO":pd.Timestamp(_nt_fecha) if _nt_fecha else pd.NaT,
                          "FECHA_CREACION":pd.Timestamp(HOY),"FECHA_CIERRE":pd.NaT,
                          "DESCRIPCION":_nt_desc,"NOTAS":"","COMENTARIOS":""}
@@ -1038,6 +1083,31 @@ if mod == "Centro de Comando":
                 st.session_state["detalle_id"] = None
                 st.rerun()
 
+            # ── Eliminar tarea ─────────────────────────────────────────────
+            _del_sp, _del_btn_col = st.columns([4, 2])
+            with _del_btn_col:
+                if st.button("🗑 Eliminar tarea", key="btn_del_task", use_container_width=True):
+                    st.session_state["confirm_delete"] = _dt_id
+                    st.rerun()
+            if st.session_state.get("confirm_delete") == _dt_id:
+                st.warning("⚠️ ¿Eliminar esta tarea permanentemente? Esta acción no se puede deshacer.")
+                _dc1, _dc2 = st.columns(2)
+                with _dc1:
+                    if st.button("⛔ Sí, eliminar", type="primary", key="btn_del_ok", use_container_width=True):
+                        if _token():
+                            _dfc_del = df_raw[df_raw["ID"] != _dt_id].copy()
+                            with st.spinner("Eliminando..."):
+                                _ok_del, _ms_del = guardar_github(_dfc_del)
+                            if _ok_del:
+                                st.session_state["detalle_id"] = None
+                                st.session_state.pop("confirm_delete", None)
+                                st.toast("✅ Tarea eliminada"); st.rerun()
+                            else:
+                                st.error(_ms_del)
+                with _dc2:
+                    if st.button("✕ Cancelar eliminación", key="btn_del_cancel", use_container_width=True):
+                        st.session_state.pop("confirm_delete", None); st.rerun()
+
         st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1053,9 +1123,55 @@ if mod == "Centro de Comando":
             (ac["FECHA_COMPROMISO"] >= HOY_TS) &
             (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=6))
         ]
+        _sf_ac = ac[ac["FECHA_COMPROMISO"].isna()].sort_values("ORDEN")
+        # ── Construir columna "Sin fecha" ──────────────────────────────────
+        _sf_th = ""
+        for _, _t in _sf_ac.iterrows():
+            _ti2 = int(_t["ID"])
+            _dn2 = str(_t.get("ESTADO","")) == "Completada"
+            _p2  = str(_t.get("PRIORIDAD","Media"))
+            _pc2 = PRIO_CLR.get(_p2, C_GRIS)
+            _n2  = (str(_t.get("TAREA",""))
+                    .replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"))
+            _pj2 = str(_t.get("PROYECTO","") or "")[:18]
+            _ch2 = "checked" if _dn2 else ""
+            _s2  = "text-decoration:line-through;opacity:0.38;" if _dn2 else ""
+            _esf2 = float(_t.get("ESFUERZO_HRS", 0) or 0)
+            _esf2_s = f"{int(_esf2)}h" if _esf2 == int(_esf2) else f"{_esf2:.1f}h"
+            _meta2 = (f'<div class="kc-meta">'
+                      + (f'<span class="kc-proj">{_pj2}</span>' if _pj2 else '')
+                      + (f'<span class="kc-hrs">{_esf2_s}</span>' if _esf2 > 0 else '')
+                      + '</div>') if (_pj2 or _esf2 > 0) else ''
+            _sf_th += (
+                f'<div class="kc" data-id="{_ti2}">'
+                f'<div class="kc-top">'
+                f'<span class="kc-dot" style="background:{_pc2};"></span>'
+                f'<span class="kc-ico" style="color:{_pc2};">{PRIO_ICO.get(_p2,"")}</span>'
+                f'<button class="kc-cp" data-id="{_ti2}" title="Duplicar tarea">⊕</button>'
+                f'<input class="kc-chk" type="checkbox" data-id="{_ti2}" {_ch2}>'
+                f'</div>'
+                f'<div class="kc-nm" style="{_s2}">{_n2}</div>'
+                + _meta2 + f'</div>'
+            )
+        _sf_hc  = _TC["meta_clr"]
+        _sf_hrs = float(_sf_ac["ESFUERZO_HRS"].fillna(0).sum())
+        _sf_hrs_s = (f"{int(_sf_hrs)}h" if _sf_hrs == int(_sf_hrs) else f"{_sf_hrs:.1f}h") if _sf_hrs > 0 else ""
+        _sf_bs = (f'color:{_sf_hc};font-size:0.65rem;font-weight:800;background:{_sf_hc}18;'
+                  f'border:1px solid {_sf_hc}44;border-radius:5px;padding:2px 8px;')
+        _sf_cnt_b = f'<span style="{_sf_bs}">{len(_sf_ac)} tareas</span>'
+        _sf_hrs_b = f'<span style="{_sf_bs}">⏳ {_sf_hrs_s}</span>' if _sf_hrs_s else ""
+        _sf_col_h = (
+            f'<div class="kk" style="border-top:3px solid {_sf_hc}55;opacity:0.78;">'
+            f'<div class="kk-top"><div>'
+            f'<div class="kk-hdr" style="color:{_sf_hc};">📥 Sin fecha</div>'
+            f'</div></div>'
+            f'<div class="kk-cnt" style="display:flex;gap:5px;flex-wrap:wrap;">'
+            f'{_sf_cnt_b}{_sf_hrs_b}</div>'
+            f'<div class="dz" data-date="" data-field="date" data-group="" id="dz-sf">{_sf_th}</div></div>'
+        )
         _DIAS_ES = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
-        _dcols_h = ""
-        _mx_t    = 0
+        _dcols_h = _sf_col_h
+        _mx_t    = max(len(_sf_ac), 0)
         for _i in range(7):
             _d     = HOY + timedelta(days=_i)
             _d_str = _d.strftime("%Y-%m-%d")
@@ -2012,13 +2128,24 @@ elif mod == "Bandeja Operacional":
     )
 
     # ── Barra de acción ────────────────────────────────────────────────────────
-    sa1, sa2, sa3 = st.columns([2, 2, 8])
+    sa1, sa2, sa3, sa4 = st.columns([2, 2, 2, 6])
     with sa1:
         guardar_btn = st.button("💾 Guardar en GitHub", type="primary",
                                 use_container_width=True, disabled=not _token())
     with sa2:
         if st.button("↩ Descartar cambios", use_container_width=True):
             st.rerun()
+    with sa3:
+        _dl_buf = io.BytesIO()
+        df_f.to_excel(_dl_buf, index=False, engine="openpyxl")
+        _dl_buf.seek(0)
+        st.download_button(
+            "📥 Descargar Excel",
+            data=_dl_buf.getvalue(),
+            file_name=f"tareas_{HOY.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
 
     if guardar_btn:
         with st.spinner("Guardando en GitHub..."):
