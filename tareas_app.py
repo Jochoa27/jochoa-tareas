@@ -857,7 +857,7 @@ if mod == "Centro de Comando":
     st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
 
     # ── Filtros globales del Centro de Comando ────────────────────────────────
-    _filt1, _filt2 = st.columns([3, 2])
+    _filt1, _filt2, _filt3 = st.columns([3, 2, 2])
     with _filt1:
         _cc_srch = st.text_input("", value=st.session_state.get("cc_search", ""),
                                   placeholder="🔍 Buscar tarea, proyecto o descripción...",
@@ -872,6 +872,21 @@ if mod == "Centro de Comando":
                                  label_visibility="collapsed",
                                  index=_projs_cc.index(_cur_proj))
         st.session_state["cc_proj"] = _cc_proj
+    with _filt3:
+        _areas_cc = ["Todas las áreas"] + sorted([a for a in ac["AREA"].dropna().unique() if str(a).strip()]) if "AREA" in ac.columns else ["Todas las áreas"]
+        _cur_area = st.session_state.get("cc_area", "Todas las áreas")
+        if _cur_area not in _areas_cc:
+            _cur_area = "Todas las áreas"
+        _cc_area_view = st.session_state.get("cc_view", "calendario")
+        _area_disabled = (_cc_area_view == "area")
+        _cc_area = st.selectbox(
+            "", _areas_cc, key="cc_area_sel",
+            label_visibility="collapsed",
+            index=_areas_cc.index(_cur_area),
+            disabled=_area_disabled,
+            help="No aplica en la vista Kanban Área" if _area_disabled else None,
+        )
+        st.session_state["cc_area"] = _cc_area
     # Aplicar filtros a 'ac' (KPIs ya calculados arriba no se ven afectados)
     if _cc_srch.strip():
         _q = _cc_srch.strip()
@@ -884,6 +899,8 @@ if mod == "Centro de Comando":
         ac = ac[_mask_srch]
     if _cc_proj != "Todos los proyectos":
         ac = ac[ac["PROYECTO"] == _cc_proj]
+    if _cc_area != "Todas las áreas" and not _area_disabled and "AREA" in ac.columns:
+        ac = ac[ac["AREA"] == _cc_area]
 
     # ── Formulario nueva tarea (abierto por "+" de kanban / calendario) ────────
     _OPTS_EST_NT  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
