@@ -497,6 +497,15 @@ def ec(option, height=260):
     s = s.replace('"__TT_FN__"',    'function(p){var d=p.data;return'
                   ' "<b>"+d[3]+"</b><br/>Urgencia: "+d[0]+"/5<br/>Impacto: "'
                   '+d[1]+"/5<br/>Esfuerzo: "+d[2]+"h";}')
+    s = s.replace('"__TT_FN_DIAG__"',
+                  'function(p){var d=p.data;var r=\'\';\n'
+                  'r+=\'<div style="font-weight:800;font-size:12px;margin-bottom:5px;">\'+d[3]+\'</div>\';\n'
+                  'r+=d[4]?\'<div style="color:#94A3B8;font-size:10px;">🏢 \'+d[4]+\'</div>\':\'\';\n'
+                  'r+=\'<div style="margin-top:4px;">⚙️ Urgencia \'+d[0]+\'/5 · Impacto \'+d[1]+\'/5 · \'+d[2]+\'h</div>\';\n'
+                  'r+=d[5]?\'<div>👤 \'+d[5]+\'</div>\':\'\';\n'
+                  'r+=d[6]?\'<div>📅 \'+d[6]+\'</div>\':\'\';\n'
+                  'r+=d[7]?\'<div style="color:#FFB300;font-weight:700;margin-top:3px;">\'+d[7]+\'</div>\':\'\';\n'
+                  'return r;}')
     html = (f'<!DOCTYPE html><html><head>'
             f'<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js">'
             f'</script></head><body style="margin:0;padding:0;background:transparent;">'
@@ -524,6 +533,7 @@ def _axis(color="#38BDF8"):
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 MODULOS = [
     ("🎯", "Centro de Comando"),
+    ("📆", "Resumen Semanal"),
     ("⚠️", "Diagnóstico de Riesgo"),
     ("📋", "Bandeja Operacional"),
     ("👥", "Seguimiento de Terceros"),
@@ -1065,10 +1075,32 @@ if mod == "Centro de Comando":
                     _cierre_prev = _dfc2.loc[_mk2, "FECHA_CIERRE"].values[0]
                     if pd.isna(_cierre_prev):
                         _dfc2.loc[_mk2, "FECHA_CIERRE"] = pd.Timestamp(HOY)
+                # Historial automático: detectar cambios de campos clave
+                _auto_lines = []
+                _ts_auto = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
+                _track = [
+                    ("ESTADO",    str(_r.get("ESTADO","") or ""),    _new_est),
+                    ("PRIORIDAD", str(_r.get("PRIORIDAD","") or ""), _new_prio),
+                    ("PROYECTO",  str(_r.get("PROYECTO","") or ""),  _new_proj),
+                    ("ESFUERZO_HRS", str(float(_r.get("ESFUERZO_HRS",0) or 0)),
+                                     str(_new_esf)),
+                ]
+                _fc_old_s = pd.Timestamp(_fc_raw).strftime("%d/%m/%Y") if pd.notna(_fc_raw) else "—"
+                _fc_new_s = pd.Timestamp(_new_fc).strftime("%d/%m/%Y") if _new_fc else "—"
+                if _fc_old_s != _fc_new_s:
+                    _auto_lines.append(f"FECHA_COMPROMISO: '{_fc_old_s}' → '{_fc_new_s}'")
+                for _fn, _fv_old, _fv_new in _track:
+                    if str(_fv_old).strip() != str(_fv_new).strip():
+                        _auto_lines.append(f"{_fn}: '{_fv_old}' → '{_fv_new}'")
+                # Construir bloque de prepend (auto + manual)
+                _prepend = []
+                if _auto_lines:
+                    _prepend.append(f"[{_ts_auto} 🔄] " + " | ".join(_auto_lines))
                 if _new_cmt.strip():
-                    _ts_c  = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
+                    _prepend.append(f"[{_ts_auto}] {_new_cmt.strip()}")
+                if _prepend:
                     _p_cmt = str(_dfc2.loc[_mk2, "COMENTARIOS"].values[0] or "")
-                    _blq   = f"[{_ts_c}] {_new_cmt.strip()}"
+                    _blq   = "\n".join(_prepend)
                     _dfc2.loc[_mk2, "COMENTARIOS"] = (
                         _blq + ("\n" + _p_cmt if _p_cmt else "")).strip()
                 with st.spinner("Guardando..."):
@@ -1798,6 +1830,200 @@ document.querySelectorAll('.sc').forEach(function(c){{
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 2: DIAGNÓSTICO DE RIESGO
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 2: RESUMEN SEMANAL
+# ══════════════════════════════════════════════════════════════════════════════
+elif mod == "Resumen Semanal":
+    ac    = _activas()
+    comps = df_raw[df_raw["ESTADO"] == "Completada"]
+    ini_sem = HOY - timedelta(days=HOY.weekday())
+    fin_sem = ini_sem + timedelta(days=6)
+
+    st.markdown(
+        f'<div style="background:linear-gradient(100deg,rgba(56,189,248,0.07),transparent);'
+        f'border:1px solid rgba(56,189,248,0.16);border-radius:20px;padding:16px 24px;margin-bottom:18px;">'
+        f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.24em;color:{C_CIAN};">PLANIFICACIÓN Y CONTROL · SEMANA {ini_sem.strftime("%V / %Y")}</div>'
+        f'<div style="font-size:1.65rem;font-weight:900;color:#F8FAFC;">📆 RESUMEN SEMANAL</div>'
+        f'<div style="font-size:0.70rem;color:{C_GRIS};margin-top:3px;">'
+        f'{ini_sem.strftime("%d %b")} — {fin_sem.strftime("%d %b %Y")}</div>'
+        f'</div>', unsafe_allow_html=True)
+
+    # ── KPIs de la semana ────────────────────────────────────────────────────
+    comp_hoy = comps[comps["FECHA_CIERRE"].notna() & (comps["FECHA_CIERRE"].dt.date == HOY)]
+    en_proc  = ac[ac["ESTADO"] == "En Proceso"]
+    venc_act = ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"] < HOY_TS)]
+    crit_act = ac[ac["PRIORIDAD"] == "Crítica"]
+    prox7    = ac[ac["FECHA_COMPROMISO"].notna() &
+                  (ac["FECHA_COMPROMISO"] >= HOY_TS) &
+                  (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=7))]
+    hh_prox7 = float(prox7["ESFUERZO_HRS"].fillna(0).sum())
+    comp_sem_r = comps[comps["FECHA_CIERRE"].notna() & (comps["FECHA_CIERRE"] >= pd.Timestamp(ini_sem))]
+    venc_sem_r = ac[ac["FECHA_COMPROMISO"].notna() &
+                    (ac["FECHA_COMPROMISO"] >= HOY_TS - pd.Timedelta(days=7)) &
+                    (ac["FECHA_COMPROMISO"] < HOY_TS)]
+    _tot_s = len(comp_sem_r) + len(venc_sem_r)
+    tasa_rs = round(len(comp_sem_r) / max(_tot_s, 1) * 100)
+    tasa_clr_rs = C_OK if tasa_rs >= 70 else C_ALERTA if tasa_rs >= 40 else C_CRITICO
+
+    _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
+    with _k1: st.markdown(kpi("COMPLETADAS HOY",   len(comp_hoy),
+                               "tareas cerradas", color=C_OK),          unsafe_allow_html=True)
+    with _k2: st.markdown(kpi("EN PROCESO",         len(en_proc),
+                               "en ejecución", color=C_CIAN),           unsafe_allow_html=True)
+    with _k3: st.markdown(kpi("VENCIDAS ACTIVAS",   len(venc_act),
+                               "fuera de plazo",
+                               color=C_CRITICO if len(venc_act) else C_OK), unsafe_allow_html=True)
+    with _k4: st.markdown(kpi("CRÍTICAS ACTIVAS",   len(crit_act),
+                               "requieren atención",
+                               color=C_CRITICO if len(crit_act) else C_GRIS), unsafe_allow_html=True)
+    with _k5:
+        _hh_s = f"{hh_prox7:.0f}h" if hh_prox7 > 0 else "0h"
+        st.markdown(kpi("HH PRÓX. 7 DÍAS",   _hh_s,
+                         "esfuerzo comprometido", color=C_ALERTA),      unsafe_allow_html=True)
+    with _k6: st.markdown(kpi("TASA SEMANAL",       f"{tasa_rs}%",
+                               "cumplimiento", color=tasa_clr_rs),      unsafe_allow_html=True)
+
+    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
+    # ── Agenda de la semana ──────────────────────────────────────────────────
+    seccion("📅", "AGENDA DE LA SEMANA", C_CIAN)
+    _DIAS_RS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
+    _agenda_h = f'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:4px;">'
+    for _ii in range(7):
+        _dd = ini_sem + timedelta(days=_ii)
+        _es_hoy_rs = (_dd == HOY)
+        _td_rs = ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"].dt.date == _dd)]
+        _td_rs = _td_rs.sort_values("PRIO_ORD") if not _td_rs.empty else _td_rs
+        _hc_rs = f"rgb({_ABR})" if _es_hoy_rs else "#475569"
+        _bg_rs = f"rgba({_ABR},0.06)" if _es_hoy_rs else "rgba(13,21,38,0.45)"
+        _brd_rs = f"rgba({_ABR},0.30)" if _es_hoy_rs else "rgba(255,255,255,0.05)"
+        _hh_d  = float(_td_rs["ESFUERZO_HRS"].fillna(0).sum())
+        _hh_d_s = f" · {_hh_d:.0f}h" if _hh_d > 0 else ""
+        _cards_rs = ""
+        for _, _t in _td_rs.iterrows():
+            _p_rs = str(_t.get("PRIORIDAD","Media"))
+            _pc_rs = PRIO_CLR.get(_p_rs, C_GRIS)
+            _nm_rs = str(_t["TAREA"])[:26]
+            _est_rs = str(_t.get("ESTADO",""))
+            _done_rs = _est_rs == "Completada"
+            _opacity_rs = "opacity:0.40;" if _done_rs else ""
+            _strike_rs  = "text-decoration:line-through;" if _done_rs else ""
+            _esf_rs = float(_t.get("ESFUERZO_HRS",0) or 0)
+            _esf_rs_s = f"{_esf_rs:.0f}h" if _esf_rs > 0 else ""
+            _cards_rs += (
+                f'<div style="background:rgba(13,21,38,0.75);border:1px solid {_pc_rs}22;'
+                f'border-left:3px solid {_pc_rs};border-radius:6px;padding:5px 7px;margin-bottom:3px;{_opacity_rs}">'
+                f'<div style="font-size:0.62rem;color:#E2E8F0;line-height:1.28;{_strike_rs}">{_nm_rs}</div>'
+                + (f'<span style="font-size:0.50rem;color:rgb({_ABR});font-weight:700;">{_esf_rs_s}</span>' if _esf_rs_s else "")
+                + f'</div>'
+            )
+        _agenda_h += (
+            f'<div style="background:{_bg_rs};border:1px solid {_brd_rs};'
+            f'border-top:3px solid {_hc_rs}{"80" if not _es_hoy_rs else ""};'
+            f'border-radius:10px;padding:10px 8px;min-height:90px;">'
+            f'<div style="font-size:0.52rem;font-weight:800;color:{_hc_rs};letter-spacing:0.08em;">'
+            f'{_DIAS_RS[_ii].upper()}</div>'
+            f'<div style="font-size:1.10rem;font-weight:900;color:{_hc_rs if _es_hoy_rs else "#94A3B8"};'
+            f'margin-bottom:5px;">{_dd.day}<span style="font-size:0.55rem;color:{C_CIAN};">{_hh_d_s}</span></div>'
+            + _cards_rs
+            + f'</div>'
+        )
+    _agenda_h += '</div>'
+    st.markdown(_agenda_h, unsafe_allow_html=True)
+
+    st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+    _col_risg, _col_time = st.columns([1, 1])
+
+    # ── Top 5 riesgos ────────────────────────────────────────────────────────
+    with _col_risg:
+        seccion("⚠️", "TOP RIESGOS ACTIVOS", C_CRITICO)
+        _ac_r2 = ac.copy()
+        _ac_r2["RIESGO"] = _ac_r2["URGENCIA"].astype(float) * _ac_r2["IMPACTO"].astype(float)
+        _top5 = _ac_r2.nlargest(5, "RIESGO")
+        for _, _rr in _top5.iterrows():
+            _pr = str(_rr.get("PRIORIDAD","Media"))
+            _pc_r = PRIO_CLR.get(_pr, C_GRIS)
+            _rsk = float(_rr["RIESGO"])
+            _clr_r = C_CRITICO if _rsk >= 20 else C_ALERTA if _rsk >= 12 else C_CIAN
+            _urg_r = float(_rr.get("URGENCIA",3))
+            _imp_r = float(_rr.get("IMPACTO",3))
+            _action_r = ("🔴 ACTUAR AHORA" if _urg_r >= 3 and _imp_r >= 3 else
+                         "🟡 PLANIFICAR"   if _imp_r >= 3 else
+                         "🔵 DELEGAR"      if _urg_r >= 3 else
+                         "⚪ MONITOREAR")
+            _fc_r = _rr.get("FECHA_COMPROMISO")
+            _dias_rr = (pd.Timestamp(_fc_r).date() - HOY).days if pd.notna(_fc_r) else None
+            _dias_rs_s = ("Vence hoy" if _dias_rr == 0 else
+                          f"Vence en {_dias_rr}d" if _dias_rr and _dias_rr > 0 else
+                          f"Vencida {abs(_dias_rr)}d" if _dias_rr is not None else "Sin fecha")
+            _ter_r = str(_rr.get("TERCERO","") or "")
+            st.markdown(
+                f'<div style="background:rgba(13,21,38,0.85);border:1px solid {_clr_r}22;'
+                f'border-left:3px solid {_clr_r};border-radius:10px;padding:10px 13px;margin-bottom:6px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+                f'<div style="font-size:0.72rem;font-weight:700;color:#E2E8F0;flex:1;line-height:1.28;">'
+                f'{PRIO_ICO.get(_pr,"")} {str(_rr["TAREA"])[:36]}</div>'
+                f'<span style="font-size:0.50rem;font-weight:800;background:{_clr_r}18;'
+                f'color:{_clr_r};border:1px solid {_clr_r}44;border-radius:5px;padding:2px 7px;'
+                f'white-space:nowrap;margin-left:6px;">{_action_r}</span></div>'
+                f'<div style="display:flex;gap:10px;margin-top:5px;">'
+                f'<span style="font-size:0.58rem;color:{_clr_r};font-weight:700;">Score {_rsk:.0f}/25</span>'
+                f'<span style="font-size:0.58rem;color:{C_GRIS};">📅 {_dias_rs_s}</span>'
+                + (f'<span style="font-size:0.58rem;color:{C_ALERTA};">👤 {_ter_r}</span>' if _ter_r else "")
+                + f'</div></div>',
+                unsafe_allow_html=True)
+
+    # ── Compromisos próximos 14 días ─────────────────────────────────────────
+    with _col_time:
+        seccion("📆", "COMPROMISOS PRÓXIMOS 14 DÍAS", C_ALERTA)
+        _dias14_lbl, _cnt14, _hh14 = [], [], []
+        _alertas14 = []
+        for _jj in range(14):
+            _dj = HOY + timedelta(days=_jj)
+            _tdj = ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"].dt.date == _dj)]
+            _dias14_lbl.append(_dj.strftime("%d/%m"))
+            _cnt14.append(len(_tdj))
+            _hh14.append(round(float(_tdj["ESFUERZO_HRS"].fillna(0).sum()), 1))
+            if len(_tdj) >= 3:
+                _alertas14.append(_dj.strftime("%d/%m"))
+        ec({
+            "backgroundColor": "transparent",
+            "tooltip": {**_TT_AXIS,
+                        "formatter": "[function(p){return p[0].axisValue+'<br/>'+p.map(function(s){return s.seriesName+': '+s.value;}).join('<br/>')}]"},
+            "legend": {"bottom":"0%","textStyle":{"color":C_GRIS,"fontSize":9}},
+            "grid": {"left":"40px","right":"50px","top":"14px","bottom":"44px"},
+            "xAxis": {**_axis(),"type":"category","data":_dias14_lbl,
+                      "axisLabel":{"color":"#64748B","fontSize":9,"rotate":35}},
+            "yAxis": [
+                {**_axis(),"type":"value","name":"Tareas","nameTextStyle":{"color":"#64748B","fontSize":8}},
+                {**_axis(),"type":"value","name":"HH","nameTextStyle":{"color":"#64748B","fontSize":8},
+                 "splitLine":{"show":False}},
+            ],
+            "series": [
+                {"name":"Tareas","type":"bar","barMaxWidth":"28px","data":_cnt14,
+                 "itemStyle":{"borderRadius":[4,4,0,0],
+                              "color":{"type":"linear","x":0,"y":0,"x2":0,"y2":1,
+                                       "colorStops":[{"offset":0,"color":"rgba(255,179,0,0.90)"},
+                                                     {"offset":1,"color":"rgba(255,179,0,0.25)"}]}},
+                 "label":{"show":True,"position":"top","color":"#94A3B8","fontSize":9}},
+                {"name":"HH estimadas","type":"line","yAxisIndex":1,"data":_hh14,
+                 "smooth":True,"symbol":"circle","symbolSize":4,
+                 "lineStyle":{"color":f"rgb({_ABR})","width":2},
+                 "itemStyle":{"color":f"rgb({_ABR})"}},
+            ],
+        }, height=250)
+        if _alertas14:
+            st.markdown(
+                f'<div style="background:rgba(255,71,87,0.06);border:1px solid rgba(255,71,87,0.20);'
+                f'border-radius:8px;padding:8px 12px;margin-top:6px;">'
+                f'<span style="font-size:0.60rem;font-weight:800;color:{C_CRITICO};">⚠️ DÍAS CON ALTA CARGA (+3 tareas): </span>'
+                f'<span style="font-size:0.60rem;color:{C_ALERTA};">{", ".join(_alertas14)}</span>'
+                f'</div>', unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 3: DIAGNÓSTICO DE RIESGO (mejorado)
+# ══════════════════════════════════════════════════════════════════════════════
 elif mod == "Diagnóstico de Riesgo":
     ac = _activas()
 
@@ -1809,19 +2035,65 @@ elif mod == "Diagnóstico de Riesgo":
         f'<div style="font-size:0.70rem;color:{C_GRIS};margin-top:3px;">Matriz Urgencia × Impacto · Tamaño = Esfuerzo estimado</div>'
         f'</div>', unsafe_allow_html=True)
 
+    # ── Filtros del diagnóstico ───────────────────────────────────────────────
+    _df1, _df2, _df3 = st.columns([3, 2, 2])
+    with _df1:
+        _projs_diag = sorted([p for p in ac["PROYECTO"].dropna().unique() if str(p).strip()])
+        _f_proj_d = st.multiselect("Filtrar por proyecto", _projs_diag, key="diag_proj",
+                                    placeholder="Todos los proyectos")
+    with _df2:
+        _areas_diag = ["Todas las áreas"] + sorted([a for a in ac["AREA"].dropna().unique() if str(a).strip()])
+        _f_area_d = st.selectbox("Área", _areas_diag, key="diag_area", label_visibility="visible")
+    with _df3:
+        _f_est_d = st.selectbox("Estado", ["Todos"]+["Pendiente","En Proceso","Esperando Terceros"],
+                                  key="diag_est", label_visibility="visible")
+    ac_d = ac.copy()
+    if _f_proj_d:
+        ac_d = ac_d[ac_d["PROYECTO"].isin(_f_proj_d)]
+    if _f_area_d != "Todas las áreas":
+        ac_d = ac_d[ac_d["AREA"] == _f_area_d]
+    if _f_est_d != "Todos":
+        ac_d = ac_d[ac_d["ESTADO"] == _f_est_d]
+    ac_d["RIESGO_"] = ac_d["URGENCIA"].astype(float) * ac_d["IMPACTO"].astype(float)
+    _score_total = int(ac_d["RIESGO_"].sum())
+    _score_max   = 25 * max(len(ac_d), 1)
+
+    # KPI de riesgo total
+    _sk1, _sk2, _sk3, _sk4 = st.columns(4)
+    with _sk1: st.markdown(kpi("TAREAS EN ANÁLISIS", len(ac_d), color=C_CRITICO), unsafe_allow_html=True)
+    with _sk2: st.markdown(kpi("SCORE RIESGO TOTAL", _score_total,
+                                f"de {_score_max} máx.", color=C_CRITICO), unsafe_allow_html=True)
+    with _sk3:
+        _n_critico = int((ac_d["RIESGO_"] >= 20).sum())
+        st.markdown(kpi("ZONA CRÍTICA (≥20)", _n_critico, "urgente+alto impacto",
+                        color=C_CRITICO if _n_critico else C_GRIS), unsafe_allow_html=True)
+    with _sk4:
+        _n_alerta = int(((ac_d["RIESGO_"] >= 12) & (ac_d["RIESGO_"] < 20)).sum())
+        st.markdown(kpi("ZONA ALERTA (12-19)", _n_alerta, "requiere seguimiento",
+                        color=C_ALERTA if _n_alerta else C_GRIS), unsafe_allow_html=True)
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
     col_mat, col_info = st.columns([3, 1])
 
     with col_mat:
         series_data = {}
-        for _, r in ac.iterrows():
+        for _, r in ac_d.iterrows():
             p   = str(r.get("PRIORIDAD","Media"))
             urg = float(r.get("URGENCIA", 3) or 3)
             imp = float(r.get("IMPACTO",  3) or 3)
             esf = float(r.get("ESFUERZO_HRS", 1) or 1)
-            nm  = str(r["TAREA"])[:40]
+            nm  = str(r["TAREA"])[:44]
+            proj_d = str(r.get("PROYECTO","") or "")
+            ter_d  = str(r.get("TERCERO","") or "")
+            fc_d   = r.get("FECHA_COMPROMISO")
+            fc_d_s = pd.Timestamp(fc_d).strftime("%d/%m/%Y") if pd.notna(fc_d) else ""
+            dias_d = (pd.Timestamp(fc_d).date() - HOY).days if pd.notna(fc_d) else None
+            dias_d_s = (f"Vence en {dias_d}d" if dias_d and dias_d > 0 else
+                        "Vence hoy" if dias_d == 0 else
+                        f"Vencida {abs(dias_d)}d" if dias_d is not None else "Sin fecha")
             if p not in series_data:
                 series_data[p] = []
-            series_data[p].append([urg, imp, esf, nm])
+            series_data[p].append([urg, imp, esf, nm, proj_d, ter_d, fc_d_s, dias_d_s])
 
         series_list = []
         for p, pts in series_data.items():
@@ -1860,7 +2132,7 @@ elif mod == "Diagnóstico de Riesgo":
 
         opt_mat = {
             "backgroundColor": "transparent",
-            "tooltip": {"trigger":"item","formatter":"__TT_FN__",
+            "tooltip": {"trigger":"item","formatter":"__TT_FN_DIAG__",
                         "backgroundColor":"rgba(6,11,21,0.97)",
                         "borderColor":"rgba(255,71,87,0.22)","borderRadius":12,
                         "textStyle":{"color":"#F1F5F9","fontSize":11}},
@@ -1896,8 +2168,8 @@ elif mod == "Diagnóstico de Riesgo":
 
     with col_info:
         st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
-        # Top riesgo
-        ac2 = ac.copy()
+        # Top riesgo (usa ac_d filtrado)
+        ac2 = ac_d.copy()
         ac2["RIESGO"] = ac2["URGENCIA"].astype(float) * ac2["IMPACTO"].astype(float)
         top_r = ac2.nlargest(8, "RIESGO")
         cards = ""
@@ -1921,9 +2193,9 @@ elif mod == "Diagnóstico de Riesgo":
             f'<div class="scroll-box" style="max-height:420px;">{cards}</div>',
             unsafe_allow_html=True)
 
-    # Tabla completa de riesgo
+    # Tabla completa de riesgo (sincronizada con filtros)
     seccion("📊", "TABLA DE RIESGO", C_CRITICO)
-    ac_t = ac.copy()
+    ac_t = ac_d.copy()
     ac_t["RIESGO"] = ac_t["URGENCIA"].astype(float) * ac_t["IMPACTO"].astype(float)
     ac_t["ZONA"] = ac_t["RIESGO"].apply(
         lambda x: "🔴 CRÍTICO" if x >= 20 else "🟡 ALERTA" if x >= 12 else "🔵 NORMAL"
@@ -2320,57 +2592,80 @@ elif mod == "Productividad":
 
     st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
 
-    # Gráfico 1: completadas por semana (últimas 8 semanas)
-    seccion("📊", "COMPLETADAS POR SEMANA", C_OK)
-    semanas, cantidades = [], []
-    for i in range(7, -1, -1):
-        ini_w = HOY - timedelta(days=HOY.weekday() + i*7)
-        fin_w = ini_w + timedelta(days=6)
-        n = len(comps[
+    # ── Selector de rango de análisis ─────────────────────────────────────────
+    _pr1, _pr2, _pr3 = st.columns([2, 2, 4])
+    with _pr1:
+        _prod_desde = st.date_input("Desde", value=HOY - timedelta(days=56), key="prod_desde")
+    with _pr2:
+        _prod_hasta = st.date_input("Hasta", value=HOY, key="prod_hasta")
+    with _pr3:
+        _prod_n_sem = max(1, ((_prod_hasta - _prod_desde).days // 7) + 1)
+        _comps_rng = comps[
             comps["FECHA_CIERRE"].notna() &
-            (comps["FECHA_CIERRE"] >= pd.Timestamp(ini_w)) &
-            (comps["FECHA_CIERRE"] <= pd.Timestamp(fin_w))
+            (comps["FECHA_CIERRE"].dt.date >= _prod_desde) &
+            (comps["FECHA_CIERRE"].dt.date <= _prod_hasta)
+        ]
+        _tasa_prom_rng = round(len(_comps_rng) / max(_prod_n_sem, 1), 1)
+        st.markdown(
+            f'<div style="margin-top:24px;">'
+            + kpi("PROM. COMPLETADAS/SEMANA", f"{_tasa_prom_rng:.1f}", f"en {_prod_n_sem} semanas analizadas", color=C_OK)
+            + '</div>', unsafe_allow_html=True)
+
+    # Gráfico 1: completadas + creadas por semana (rango seleccionado)
+    seccion("📊", "FLUJO SEMANAL — COMPLETADAS VS CREADAS", C_OK)
+    _sem_lbl, _comp_sem_data, _crea_sem_data = [], [], []
+    _cur = _prod_desde - timedelta(days=_prod_desde.weekday())
+    while _cur <= _prod_hasta:
+        _fin_w = _cur + timedelta(days=6)
+        _n_comp = len(comps[
+            comps["FECHA_CIERRE"].notna() &
+            (comps["FECHA_CIERRE"].dt.date >= _cur) &
+            (comps["FECHA_CIERRE"].dt.date <= _fin_w)
         ])
-        semanas.append(ini_w.strftime("W%V\n%d/%m"))
-        cantidades.append(n)
+        _n_crea = len(df_raw[
+            df_raw["FECHA_CREACION"].notna() &
+            (df_raw["FECHA_CREACION"].dt.date >= _cur) &
+            (df_raw["FECHA_CREACION"].dt.date <= _fin_w)
+        ])
+        _sem_lbl.append(_cur.strftime("W%V\n%d/%m"))
+        _comp_sem_data.append(_n_comp)
+        _crea_sem_data.append(_n_crea)
+        _cur += timedelta(days=7)
+
+    # Media móvil 3 semanas para tendencia
+    _comp_mv = []
+    for _si in range(len(_comp_sem_data)):
+        _win = _comp_sem_data[max(0,_si-2):_si+1]
+        _comp_mv.append(round(sum(_win)/len(_win), 1))
 
     ec({
         "backgroundColor": "transparent",
         "tooltip": _TT_AXIS,
-        "grid": {"left":"40px","right":"20px","top":"20px","bottom":"40px"},
-        "xAxis": {**_axis(),"type":"category","data":semanas},
+        "legend": {"bottom":"2%","textStyle":{"color":C_GRIS,"fontSize":10}},
+        "grid": {"left":"40px","right":"20px","top":"20px","bottom":"50px"},
+        "xAxis": {**_axis(),"type":"category","data":_sem_lbl,
+                  "axisLabel":{"color":"#64748B","fontSize":9}},
         "yAxis": {**_axis(),"type":"value"},
-        "series": [{"type":"bar","barMaxWidth":"36px","data":cantidades,
-                    "label":{"show":True,"position":"top","color":"#94A3B8","fontSize":10},
-                    "itemStyle":{
-                        "borderRadius":[6,6,0,0],
-                        "color":{"type":"linear","x":0,"y":0,"x2":0,"y2":1,
-                                 "colorStops":[{"offset":0,"color":"rgba(35,209,96,0.95)"},
-                                               {"offset":1,"color":"rgba(35,209,96,0.25)"}]}
-                    }}],
-    }, height=220)
+        "series": [
+            {"name":"Completadas","type":"bar","barMaxWidth":"30px","data":_comp_sem_data,
+             "itemStyle":{"borderRadius":[5,5,0,0],
+                          "color":{"type":"linear","x":0,"y":0,"x2":0,"y2":1,
+                                   "colorStops":[{"offset":0,"color":"rgba(35,209,96,0.95)"},
+                                                 {"offset":1,"color":"rgba(35,209,96,0.25)"}]}}},
+            {"name":"Creadas","type":"bar","barMaxWidth":"30px","data":_crea_sem_data,
+             "itemStyle":{"borderRadius":[5,5,0,0],
+                          "color":{"type":"linear","x":0,"y":0,"x2":0,"y2":1,
+                                   "colorStops":[{"offset":0,"color":"rgba(56,189,248,0.55)"},
+                                                 {"offset":1,"color":"rgba(56,189,248,0.12)"}]}}},
+            {"name":"Tendencia completadas","type":"line","data":_comp_mv,
+             "smooth":True,"symbol":"none",
+             "lineStyle":{"color":"rgba(35,209,96,0.70)","width":2,"type":"dashed"},
+             "itemStyle":{"color":"rgba(35,209,96,0.70)"}},
+        ],
+    }, height=230)
 
     col_p1, col_p2 = st.columns(2)
     with col_p1:
-        seccion("📊", "POR PROYECTO", C_CIAN)
-        proj_c = df_raw.groupby("PROYECTO")["ESTADO"].apply(
-            lambda x: (x == "Completada").sum()
-        ).sort_values()
-        ec({
-            "backgroundColor": "transparent",
-            "tooltip": _TT_AXIS,
-            "grid": {"left":"110px","right":"40px","top":"10px","bottom":"10px"},
-            "xAxis": {**_axis(),"type":"value"},
-            "yAxis": {**_axis(),"type":"category","data":proj_c.index.tolist(),
-                      "axisLabel":{"color":"#94A3B8","fontSize":9}},
-            "series": [{"type":"bar","barMaxWidth":"22px",
-                        "data":[int(v) for v in proj_c.values],
-                        "label":{"show":True,"position":"right","color":"#94A3B8","fontSize":9},
-                        "itemStyle":{"borderRadius":[0,6,6,0],
-                                     "color":"rgba(56,189,248,0.80)"}}],
-        }, height=230)
-
-    with col_p2:
         seccion("📊", "POR CATEGORÍA", C_INDIGO)
         cat_c = df_raw.groupby("CATEGORIA")["ESTADO"].apply(
             lambda x: (x == "Completada").sum()
@@ -2389,22 +2684,47 @@ elif mod == "Productividad":
                                      "color":"rgba(168,85,247,0.80)"}}],
         }, height=230)
 
-    # Pendientes por prioridad
-    seccion("📊", "PENDIENTES POR PRIORIDAD", C_ALERTA)
-    prio_p = ac.groupby("PRIORIDAD").size().reindex(["Crítica","Alta","Media","Baja"]).fillna(0)
-    prio_p_all = ac["PRIORIDAD"].value_counts()
-    ec({
-        "backgroundColor": "transparent",
-        "tooltip": _TT,
-        "legend": {"bottom":"2%","textStyle":{"color":C_GRIS,"fontSize":10}},
-        "series": [{"type":"pie","radius":["40%","68%"],"center":["50%","48%"],
-                    "avoidLabelOverlap":True,
-                    "label":{"show":False},
-                    "emphasis":{"label":{"show":True,"fontSize":13,"fontWeight":"bold","color":"#F1F5F9"}},
-                    "data":[{"name":k,"value":int(v),
-                              "itemStyle":{"color":PRIO_CLR.get(k,C_GRIS),"borderWidth":2,"borderColor":"#060B15"}}
-                             for k,v in prio_p_all.items()]}],
-    }, height=220)
+    with col_p2:
+        seccion("📊", "PENDIENTES POR PRIORIDAD", C_ALERTA)
+        prio_p_all = ac["PRIORIDAD"].value_counts()
+        ec({
+            "backgroundColor": "transparent",
+            "tooltip": _TT,
+            "legend": {"bottom":"2%","textStyle":{"color":C_GRIS,"fontSize":10}},
+            "series": [{"type":"pie","radius":["40%","68%"],"center":["50%","44%"],
+                        "avoidLabelOverlap":True,
+                        "label":{"show":False},
+                        "emphasis":{"label":{"show":True,"fontSize":13,"fontWeight":"bold","color":"#F1F5F9"}},
+                        "data":[{"name":k,"value":int(v),
+                                  "itemStyle":{"color":PRIO_CLR.get(k,C_GRIS),"borderWidth":2,"borderColor":"#060B15"}}
+                                 for k,v in prio_p_all.items()]}],
+        }, height=230)
+
+    # ── Tabla de avance por proyecto ──────────────────────────────────────────
+    seccion("📋", "AVANCE POR PROYECTO", C_CIAN)
+    _proj_list = [p for p in df_raw["PROYECTO"].dropna().unique() if str(p).strip()]
+    _proj_tbl  = []
+    for _pj in sorted(_proj_list):
+        _dfpj = df_raw[df_raw["PROYECTO"] == _pj]
+        _n_comp_pj = int((_dfpj["ESTADO"] == "Completada").sum())
+        _n_proc_pj = int((_dfpj["ESTADO"] == "En Proceso").sum())
+        _n_pend_pj = int((_dfpj["ESTADO"] == "Pendiente").sum())
+        _n_canc_pj = int((_dfpj["ESTADO"].isin(["Cancelada"])).sum())
+        _n_tot_pj  = len(_dfpj) - _n_canc_pj
+        _avance_pj = round(_n_comp_pj / max(_n_tot_pj, 1) * 100)
+        _hh_est_pj = round(float(_dfpj[~_dfpj["ESTADO"].isin(["Completada","Cancelada"])]["ESFUERZO_HRS"].fillna(0).sum()), 1)
+        _proj_tbl.append({
+            "Proyecto": _pj,
+            "Completadas": _n_comp_pj,
+            "En Proceso": _n_proc_pj,
+            "Pendientes": _n_pend_pj,
+            "% Avance": f"{_avance_pj}%",
+            "HH pendientes": f"{_hh_est_pj}h",
+        })
+    _df_proj_tbl = pd.DataFrame(_proj_tbl)
+    if not _df_proj_tbl.empty:
+        st.dataframe(_df_proj_tbl, use_container_width=True, hide_index=True,
+                     height=min(400, 55 + len(_df_proj_tbl)*36))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 7: CONSUMO DE TIEMPO
