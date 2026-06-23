@@ -1294,12 +1294,15 @@ document.querySelectorAll('.kc').forEach(function(c){{
             _add_btn = (f'<button class="kk-add" data-field="{_kfield}" '
                         f'data-group="{_gval}" title="Nueva tarea">+</button>'
                         if _tok_add and _cv != "vencidas" else "")
+            _ghrs   = float(_gdf["ESFUERZO_HRS"].fillna(0).sum())
+            _ghrs_s = (f"{int(_ghrs)}h" if _ghrs == int(_ghrs) else f"{_ghrs:.1f}h") if _ghrs > 0 else ""
+            _gcnt   = f'{len(_gdf)} tareas' + (f' · ⏳ {_ghrs_s}' if _ghrs_s else '')
             _dcols_h += (
                 f'<div class="kk" style="border-top:3px solid {_gc2}55;">'
                 f'<div class="kk-top">'
                 f'<div class="kk-hdr" style="color:{_gc2};">{_gi} {_gval}</div>'
                 f'{_add_btn}</div>'
-                f'<div class="kk-cnt">{len(_gdf)} tareas</div>'
+                f'<div class="kk-cnt">{_gcnt}</div>'
                 f'<div class="dz" data-field="{_kfield}" data-group="{_gval}" '
                 f'id="dz-{_sg}">{_th2}</div></div>'
             )
