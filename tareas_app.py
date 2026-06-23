@@ -1001,6 +1001,27 @@ if mod == "Centro de Comando":
     if _cc_area != "Todas las áreas" and not _area_disabled and "AREA" in ac.columns:
         ac = ac[ac["AREA"] == _cc_area]
 
+    # ── Mapa de calor semanal ─────────────────────────────────────────────────
+    _mc_cols = st.columns(7)
+    _mc_dias = ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]
+    for _mdi in range(7):
+        _mts = HOY_TS + pd.Timedelta(days=_mdi)
+        _mnt = len(ac[ac["FECHA_COMPROMISO"].notna() & (ac["FECHA_COMPROMISO"] == _mts)])
+        _mclr = C_GRIS if _mnt == 0 else (C_OK if _mnt == 1 else (C_ALERTA if _mnt <= 3 else C_CRITICO))
+        _mtip = " / ".join(ac[ac["FECHA_COMPROMISO"] == _mts]["TAREA"].head(3).tolist())
+        with _mc_cols[_mdi]:
+            _mbrd = f"2px solid {C_CIAN}88" if _mdi == 0 else f"1px solid {_mclr}44"
+            st.markdown(
+                f'<div style="background:{_mclr}12;border:{_mbrd};border-radius:8px;'
+                f'padding:5px 3px;text-align:center;" title="{_mtip}">'
+                f'<div style="font-size:0.44rem;font-weight:800;color:#475569;'
+                f'text-transform:uppercase;">{_mc_dias[_mdi]}</div>'
+                f'<div style="font-size:0.42rem;color:#334155;">{_mts.strftime("%d/%m")}</div>'
+                f'<div style="font-size:1.05rem;font-weight:900;color:{_mclr};line-height:1.1;">'
+                f'{"—" if _mnt==0 else _mnt}</div>'
+                f'</div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
     # ── Formulario nueva tarea (abierto por "+" de kanban / calendario) ────────
     _OPTS_EST_NT  = ["Pendiente","En Proceso","Esperando Terceros","Completada","Cancelada"]
     _OPTS_PRIO_NT = ["Crítica","Alta","Media","Baja"]
@@ -1118,71 +1139,92 @@ if mod == "Centro de Comando":
                 unsafe_allow_html=True)
 
             with st.form("frm_det", border=False):
-                _fa, _fb, _fc = st.columns(3)
-                with _fa:
-                    _new_tarea = st.text_input("Nombre de la tarea",
-                                               value=str(_r.get("TAREA","") or ""))
-                    _new_est   = st.selectbox("Estado",    _OPTS_EST2,
-                                              index=_si(_OPTS_EST2, _r.get("ESTADO","Pendiente")))
-                    _new_prio  = st.selectbox("Prioridad", _OPTS_PRIO2,
-                                              index=_si(_OPTS_PRIO2, _r.get("PRIORIDAD","Media")))
-                    _new_tipo  = st.selectbox("Tipo",      _OPTS_TIPO2,
-                                              index=_si(_OPTS_TIPO2, _r.get("TIPO","Tarea")))
-                with _fb:
-                    _new_proj = st.text_input("Proyecto",
-                                              value=str(_r.get("PROYECTO","") or ""))
-                    _new_area = st.selectbox("Área",      _OPTS_AREA2,
-                                             index=_si(_OPTS_AREA2, _r.get("AREA","Trabajo")))
-                    _new_cat  = st.selectbox("Categoría", _OPTS_CAT2,
-                                             index=_si(_OPTS_CAT2,  _r.get("CATEGORIA","Planificación")))
-                    _new_ter  = st.text_input("Tercero",
-                                              value=str(_r.get("TERCERO","") or ""))
-                with _fc:
+                # Fila 1: Nombre completo
+                _new_tarea = st.text_input("Nombre de la tarea",
+                                           value=str(_r.get("TAREA","") or ""))
+                # Fila 2: Selectboxes compactos en 5 columnas
+                _fd1,_fd2,_fd3,_fd4,_fd5 = st.columns(5)
+                with _fd1: _new_est  = st.selectbox("Estado",    _OPTS_EST2,
+                               index=_si(_OPTS_EST2,  _r.get("ESTADO","Pendiente")))
+                with _fd2: _new_prio = st.selectbox("Prioridad", _OPTS_PRIO2,
+                               index=_si(_OPTS_PRIO2, _r.get("PRIORIDAD","Media")))
+                with _fd3: _new_tipo = st.selectbox("Tipo",      _OPTS_TIPO2,
+                               index=_si(_OPTS_TIPO2, _r.get("TIPO","Tarea")))
+                with _fd4: _new_area = st.selectbox("Área",      _OPTS_AREA2,
+                               index=_si(_OPTS_AREA2, _r.get("AREA","Trabajo")))
+                with _fd5: _new_cat  = st.selectbox("Categoría", _OPTS_CAT2,
+                               index=_si(_OPTS_CAT2,  _r.get("CATEGORIA","Planificación")))
+                # Fila 3: Proyecto, Tercero, Fecha, Esfuerzo
+                _fd6,_fd7,_fd8,_fd9 = st.columns([3,3,2,2])
+                with _fd6: _new_proj = st.text_input("Proyecto",
+                               value=str(_r.get("PROYECTO","") or ""))
+                with _fd7: _new_ter  = st.text_input("Tercero",
+                               value=str(_r.get("TERCERO","") or ""))
+                with _fd8:
                     _fc_raw  = _r.get("FECHA_COMPROMISO")
                     _fc_date = pd.Timestamp(_fc_raw).date() if pd.notna(_fc_raw) else None
-                    _new_fc  = st.date_input("Fecha de vencimiento",
+                    _new_fc  = st.date_input("Fecha vencimiento",
                                              value=_fc_date, format="DD/MM/YYYY")
-                    _new_imp = st.number_input("Impacto (1-5)",  min_value=1, max_value=5, step=1,
-                                               value=int(_r.get("IMPACTO",3) or 3))
-                    _new_urg = st.number_input("Urgencia (1-5)", min_value=1, max_value=5, step=1,
-                                               value=int(_r.get("URGENCIA",3) or 3))
-                    _new_esf = st.number_input("Esfuerzo est. (hrs)", min_value=0.0, step=0.5,
-                                               format="%.1f",
-                                               value=float(_r.get("ESFUERZO_HRS",0) or 0))
+                with _fd9: _new_esf = st.number_input("Est. (hrs)", min_value=0.0,
+                               step=0.5, format="%.1f",
+                               value=float(_r.get("ESFUERZO_HRS",0) or 0))
+                # Fila 4: Impacto, Urgencia, Horas reales
+                _fd10,_fd11,_fd12 = st.columns(3)
+                with _fd10: _new_imp = st.number_input("Impacto (1-5)",  min_value=1,
+                                max_value=5, step=1, value=int(_r.get("IMPACTO",3) or 3))
+                with _fd11: _new_urg = st.number_input("Urgencia (1-5)", min_value=1,
+                                max_value=5, step=1, value=int(_r.get("URGENCIA",3) or 3))
+                with _fd12:
                     _cur_est_det = str(_r.get("ESTADO",""))
-                    _new_hr = st.number_input(
-                        "Horas reales invertidas",
-                        min_value=0.0, step=0.5, format="%.1f",
-                        value=float(_r.get("HORAS_REALES",0) or 0),
-                        help="Registra cuántas horas reales tomó esta tarea",
-                        disabled=(_cur_est_det not in ("Completada","Cancelada")),
-                    )
-
+                    _new_hr = st.number_input("Horas reales",
+                                min_value=0.0, step=0.5, format="%.1f",
+                                value=float(_r.get("HORAS_REALES",0) or 0),
+                                help="Editable solo en Completada / Cancelada",
+                                disabled=(_cur_est_det not in ("Completada","Cancelada")))
+                # Fila 5: Descripción/Notas
                 _new_notas = st.text_area("Descripción / Notas",
-                                          value=str(_r.get("NOTAS","") or ""), height=88)
-
+                                          value=str(_r.get("NOTAS","") or ""), height=80)
+                # Fila 6: Historial legible + nuevo comentario
                 st.markdown(
                     f'<div style="font-size:0.52rem;font-weight:800;letter-spacing:0.18em;'
-                    f'color:{C_CIAN};margin:10px 0 4px;">COMENTARIOS</div>',
+                    f'color:{C_CIAN};margin:10px 0 4px;">HISTORIAL DE CAMBIOS</div>',
                     unsafe_allow_html=True)
                 _cmt_prev = str(_r.get("COMENTARIOS","") or "") \
                             if "COMENTARIOS" in df_raw.columns else ""
                 if _cmt_prev:
-                    _lines_html = "".join(
-                        f'<div style="font-size:0.70rem;color:#94A3B8;padding:5px 0;'
-                        f'border-bottom:1px solid #1E293B;">{ln}</div>'
-                        for ln in _cmt_prev.strip().split("\n") if ln.strip()
-                    )
+                    _hist_html = ""
+                    for _cln in _cmt_prev.strip().split("\n"):
+                        _cln = _cln.strip()
+                        if not _cln:
+                            continue
+                        if _cln.startswith("[") and "]" in _cln:
+                            _bk = _cln.index("]")
+                            _chdr  = _cln[1:_bk]
+                            _cbody = _cln[_bk+1:].strip()
+                            _is_a  = "🔄" in _chdr
+                            _cts   = _chdr.replace("🔄","").strip()
+                            _cico  = "🔄" if _is_a else "💬"
+                            _bclr  = "#38BDF8" if _is_a else "#E2E8F0"
+                            _hist_html += (
+                                f'<div style="padding:5px 0;border-bottom:1px solid #0F172A;">'
+                                f'<div style="font-size:0.52rem;color:#475569;">{_cico} {_cts}</div>'
+                                f'<div style="font-size:0.68rem;color:{_bclr};line-height:1.4;">{_cbody}</div>'
+                                f'</div>'
+                            )
+                        else:
+                            _hist_html += (
+                                f'<div style="font-size:0.68rem;color:#94A3B8;padding:5px 0;'
+                                f'border-bottom:1px solid #0F172A;">{_cln}</div>'
+                            )
                     st.markdown(
                         f'<div style="background:rgba(6,11,21,0.6);border:1px solid #1E293B;'
-                        f'border-radius:8px;padding:8px 12px;margin-bottom:8px;max-height:130px;'
-                        f'overflow-y:auto;">{_lines_html}</div>',
+                        f'border-radius:8px;padding:8px 12px;margin-bottom:8px;max-height:160px;'
+                        f'overflow-y:auto;">{_hist_html}</div>',
                         unsafe_allow_html=True)
                 _new_cmt = st.text_area("Nuevo comentario",
                                         placeholder="Escribe un comentario y guarda...",
-                                        height=68, label_visibility="collapsed",
+                                        height=60, label_visibility="collapsed",
                                         key="det_cmt_input")
-
                 _sb1, _sb2 = st.columns([3, 2])
                 with _sb1:
                     _guardar_d = st.form_submit_button(
