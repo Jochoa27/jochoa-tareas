@@ -7,7 +7,6 @@ import pandas as pd
 import json
 import base64
 import io
-import re
 import requests
 from pathlib import Path
 from datetime import date, timedelta
@@ -154,6 +153,53 @@ C_BG  = _TC["bg1"]
 C_BG2 = _TC["bg2"]
 C_BG3 = _TC["bg3"]
 _ABR  = _TC["abr"]
+
+# CSS compartido entre calendario y kanban (elimina duplicación 40-45%)
+_KC_CSS = f"""
+*{{box-sizing:border-box;margin:0;padding:0;}}
+html,body{{height:100%;background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;}}
+body{{overflow-x:auto;overflow-y:auto;}}
+::-webkit-scrollbar{{height:5px;width:5px;}}
+::-webkit-scrollbar-track{{background:transparent;}}
+::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
+::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
+.kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);border-radius:6px;
+         color:{_TC['meta_clr']};cursor:pointer;font-size:1rem;font-weight:700;line-height:1;
+         padding:2px 7px;transition:all .15s;flex-shrink:0;}}
+.kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);color:rgb({_ABR});}}
+.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;margin-bottom:8px;}}
+.dz{{min-height:48px;border-radius:9px;border:2px dashed transparent;padding:3px;transition:all .18s;}}
+.dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
+.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};border-radius:9px;
+     padding:8px;margin-bottom:5px;cursor:grab;}}
+.kc:active{{cursor:grabbing;}}
+.kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:4px;}}
+.kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
+.kc-ico{{font-size:0.58rem;flex:1;}}
+.kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
+.kc-nm{{font-size:0.70rem;font-weight:600;color:{_TC['nm_clr']};line-height:1.3;word-break:break-word;}}
+.kc-meta{{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}}
+.kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);border-radius:4px;padding:1px 4px;}}
+.kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
+.kc-fc{{font-size:0.52rem;color:{_TC['meta_clr']};}}
+.kc-delay{{font-size:0.52rem;color:#FF4757;font-weight:700;background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
+.kc-cp{{background:transparent;border:none;cursor:pointer;font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;}}
+.kc-cp:hover{{color:rgb({_ABR});}}
+.kc-st{{background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.22);border-radius:4px;
+        color:#64748B;cursor:pointer;font-size:0.50rem;font-weight:800;line-height:1;
+        padding:2px 4px;flex-shrink:0;transition:all .15s;}}
+.kc-st:hover{{background:rgba({_ABR},0.14);border-color:rgba({_ABR},0.30);color:rgb({_ABR});}}
+.kc-del{{background:transparent;border:none;cursor:pointer;font-size:0.62rem;line-height:1;padding:1px 3px;flex-shrink:0;}}
+.kc-del:hover{{color:#FF4757;}}
+.kc-del.conf{{color:#FF4757!important;font-weight:700;background:rgba(255,71,87,0.10);border-radius:3px;}}
+/* Controles secundarios ocultos — aparecen al hacer hover sobre la tarjeta */
+.kc-st,.kc-cp{{opacity:0;pointer-events:none;color:#334155;}}
+.kc-del{{opacity:0;pointer-events:none;color:#334155;transition:opacity .15s,color .15s;}}
+.kc:hover .kc-st,.kc:hover .kc-cp,.kc:hover .kc-del{{opacity:1;pointer-events:auto;}}
+.kc-del.conf{{opacity:1!important;pointer-events:auto!important;}}
+.sortable-ghost{{opacity:.18;transform:scale(.95);}}
+.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
+"""
 
 _PEARL_CSS = "" if _DARK else f"""
 /* ── PEARL light mode overrides ── */
@@ -652,6 +698,7 @@ if mod == "Centro de Comando":
                 (ac["FECHA_COMPROMISO"] <= HOY_TS + pd.Timedelta(days=3))]
     crit   = ac[ac["PRIORIDAD"] == "Crítica"]
     terc_p = ac[ac["ESTADO"] == "Esperando Terceros"]
+    en_proc = ac[ac["ESTADO"] == "En Proceso"]
     ini_sem = HOY - timedelta(days=HOY.weekday())
     comp_s = comps[comps["FECHA_CIERRE"].notna() & (comps["FECHA_CIERRE"] >= pd.Timestamp(ini_sem))]
     comp_m = comps[
@@ -684,32 +731,60 @@ if mod == "Centro de Comando":
         f'</div></div>',
         unsafe_allow_html=True)
 
-    # ── KPIs fila 1 ───────────────────────────────────────────────────────────
-    c1,c2,c3,c4,c5,c6 = st.columns(6)
-    with c1: st.markdown(kpi("TAREAS ACTIVAS",     len(ac),     color=C_CIAN),  unsafe_allow_html=True)
-    with c2: st.markdown(kpi("CRÍTICAS",            len(crit),   "requieren atención",
-                              color=C_CRITICO if len(crit) else C_GRIS),             unsafe_allow_html=True)
-    with c3: st.markdown(kpi("VENCIDAS",            len(venc),   "fuera de plazo",
-                              color=C_CRITICO if len(venc) else C_OK),               unsafe_allow_html=True)
-    with c4: st.markdown(kpi("VENCEN EN 3 DÍAS",   len(próx),   "alta prioridad",
-                              color=C_ALERTA  if len(próx) else C_GRIS),             unsafe_allow_html=True)
-    with c5: st.markdown(kpi("ESPERA TERCEROS",     len(terc_p), "bloqueadas",
-                              color=C_ALERTA  if len(terc_p) else C_GRIS),          unsafe_allow_html=True)
-    with c6: st.markdown(kpi("COMPLETADAS",         len(comps),  color=C_OK),   unsafe_allow_html=True)
+    # ── KPIs zona crítica ─────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="font-size:0.46rem;font-weight:800;letter-spacing:0.22em;'
+        'color:#FF4757;margin-bottom:6px;padding-left:2px;">ALERTAS</div>',
+        unsafe_allow_html=True)
+    kc1,kc2,kc3,kc4 = st.columns(4)
+    with kc1: st.markdown(kpi("VENCIDAS",         len(venc),   "fuera de plazo",
+                               color=C_CRITICO if len(venc) else C_GRIS),  unsafe_allow_html=True)
+    with kc2: st.markdown(kpi("VENCEN EN 3 DÍAS", len(próx),   "alta prioridad",
+                               color=C_ALERTA  if len(próx) else C_GRIS),  unsafe_allow_html=True)
+    with kc3: st.markdown(kpi("ESPERA TERCEROS",  len(terc_p), "bloqueadas",
+                               color=C_ALERTA  if len(terc_p) else C_GRIS), unsafe_allow_html=True)
+    with kc4: st.markdown(kpi("CRÍTICAS",         len(crit),   "requieren atención",
+                               color=C_CRITICO if len(crit) else C_GRIS),  unsafe_allow_html=True)
 
-    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
 
-    # ── KPIs fila 2 ───────────────────────────────────────────────────────────
-    c7,c8,c9,c10 = st.columns(4)
+    # ── KPIs zona operacional ─────────────────────────────────────────────────
+    st.markdown(
+        '<div style="font-size:0.46rem;font-weight:800;letter-spacing:0.22em;'
+        'color:#38BDF8;margin-bottom:6px;padding-left:2px;">OPERACIONAL</div>',
+        unsafe_allow_html=True)
     tasa_clr = C_OK if tasa_s >= 70 else C_ALERTA if tasa_s >= 40 else C_CRITICO
-    _both = comps.dropna(subset=["FECHA_CIERRE","FECHA_CREACION"])
-    avg_d = (_both["FECHA_CIERRE"] - _both["FECHA_CREACION"]).dt.days.mean() if not _both.empty else None
-    with c7:  st.markdown(kpi("COMP. ESTA SEMANA", len(comp_s), color=C_OK),              unsafe_allow_html=True)
-    with c8:  st.markdown(kpi("COMP. ESTE MES",    len(comp_m), color=C_OK),              unsafe_allow_html=True)
-    with c9:  st.markdown(kpi("T° PROM. CIERRE",   f"{avg_d:.0f}d" if avg_d else "—",
-                               "tiempo promedio",    color=C_CIAN),                        unsafe_allow_html=True)
-    with c10: st.markdown(kpi("TASA SEMANAL",      f"{tasa_s}%", "cumplimiento",
-                               color=tasa_clr),                                            unsafe_allow_html=True)
+    ko1,ko2,ko3,ko4 = st.columns(4)
+    with ko1: st.markdown(kpi("ACTIVAS",          len(ac),      color=C_CIAN), unsafe_allow_html=True)
+    with ko2: st.markdown(kpi("EN PROCESO",       len(en_proc), "en ejecución",
+                               color=C_CIAN if len(en_proc) else C_GRIS),     unsafe_allow_html=True)
+    with ko3: st.markdown(kpi("COMP. ESTA SEMANA", len(comp_s), color=C_OK),  unsafe_allow_html=True)
+    with ko4: st.markdown(kpi("TASA SEMANAL",     f"{tasa_s}%", "cumplimiento",
+                               color=tasa_clr),                                unsafe_allow_html=True)
+
+    st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+    # ── Insight accionable ────────────────────────────────────────────────────
+    _ins_ico, _ins_txt, _ins_clr = "📋", f"{len(ac)} tareas activas", C_CIAN
+    if len(venc) > 0:
+        _vn = " · ".join(f'"{t[:30]}"' for t in venc["TAREA"].head(2).tolist())
+        _ins_ico, _ins_txt, _ins_clr = "🔴", f"{len(venc)} tarea{'s' if len(venc)>1 else ''} vencida{'s' if len(venc)>1 else ''} → {_vn}", C_CRITICO
+    elif len(próx) > 0:
+        _px = " · ".join(f'"{t[:30]}"' for t in próx.sort_values("FECHA_COMPROMISO")["TAREA"].head(2).tolist())
+        _ins_ico, _ins_txt, _ins_clr = "⚠️", f"{len(próx)} tarea{'s' if len(próx)>1 else ''} vence{'n' if len(próx)>1 else ''} en ≤3 días → {_px}", C_ALERTA
+    elif len(terc_p) > 0:
+        _ters = " · ".join(str(t) for t in terc_p["TERCERO"].dropna().unique()[:2])
+        _ins_ico, _ins_txt, _ins_clr = "🟡", f"{len(terc_p)} tarea{'s' if len(terc_p)>1 else ''} esperando respuesta{'s' if len(terc_p)>1 else ''}" + (f" de {_ters}" if _ters else ""), C_ALERTA
+    elif tasa_s >= 70:
+        _ins_ico, _ins_txt, _ins_clr = "✅", f"Tasa de cumplimiento {tasa_s}% esta semana — sin alertas activas", C_OK
+    st.markdown(
+        f'<div style="background:{_ins_clr}0D;border-left:3px solid {_ins_clr};'
+        f'border-radius:0 8px 8px 0;padding:7px 14px;margin-bottom:4px;'
+        f'display:flex;align-items:center;gap:8px;">'
+        f'<span style="font-size:0.9rem;flex-shrink:0;">{_ins_ico}</span>'
+        f'<span style="font-size:0.63rem;color:#E2E8F0;font-weight:600;line-height:1.4;">{_ins_txt}</span>'
+        f'</div>',
+        unsafe_allow_html=True)
 
     st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
@@ -1317,58 +1392,12 @@ if mod == "Centro de Comando":
         components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-html,body{{height:100%;background:transparent;
-           font-family:-apple-system,'Segoe UI',sans-serif;}}
-body{{overflow-x:auto;overflow-y:auto;}}
-.cal{{display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;padding:2px 2px 10px;
-     align-items:flex-start;}}
-::-webkit-scrollbar{{height:5px;width:5px;}}
-::-webkit-scrollbar-track{{background:transparent;}}
-::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
-::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
-.kk{{flex:0 0 220px;width:220px;background:{_TC['card1']};
-     border:1px solid {_TC['border']};border-radius:14px;padding:11px 9px;}}
+{_KC_CSS}
+.cal{{display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;padding:2px 2px 10px;align-items:flex-start;}}
+.kk{{flex:0 0 220px;width:220px;background:{_TC['card1']};border:1px solid {_TC['border']};border-radius:14px;padding:11px 9px;}}
 .kk-top{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}}
 .kk-hdr{{font-size:0.54rem;font-weight:800;letter-spacing:0.10em;}}
 .kk-num{{font-size:1.30rem;font-weight:900;line-height:1;color:{_TC['nm_clr']};}}
-.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;margin-bottom:8px;}}
-.kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);
-         border-radius:6px;color:{_TC['meta_clr']};cursor:pointer;font-size:1rem;
-         font-weight:700;line-height:1;padding:3px 7px;transition:all .15s;}}
-.kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);
-              color:rgb({_ABR});}}
-.dz{{min-height:48px;border-radius:9px;border:2px dashed transparent;
-    padding:3px;transition:all .18s;}}
-.dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
-.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};border-radius:9px;
-     padding:7px;margin-bottom:5px;cursor:grab;}}
-.kc:active{{cursor:grabbing;}}
-.kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:4px;}}
-.kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
-.kc-ico{{font-size:0.58rem;flex:1;}}
-.kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
-.kc-nm{{font-size:0.68rem;font-weight:600;color:{_TC['nm_clr']};
-        line-height:1.28;word-break:break-word;}}
-.kc-meta{{display:flex;gap:4px;margin-top:4px;}}
-.kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
-          border-radius:4px;padding:1px 4px;}}
-.kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;
-         background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
-.kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
-        font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
-.kc-cp:hover{{color:rgb({_ABR});}}
-.kc-st{{background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.22);
-        border-radius:4px;color:#64748B;cursor:pointer;font-size:0.50rem;font-weight:800;
-        line-height:1;padding:2px 4px;flex-shrink:0;transition:all .15s;}}
-.kc-st:hover{{background:rgba({_ABR},0.14);border-color:rgba({_ABR},0.30);color:rgb({_ABR});}}
-.kc-del{{background:transparent;border:none;color:#334155;cursor:pointer;
-         font-size:0.62rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
-.kc-del:hover{{color:#FF4757;}}
-.kc-del.conf{{color:#FF4757!important;font-weight:700;background:rgba(255,71,87,0.10);
-              border-radius:3px;}}
-.sortable-ghost{{opacity:.20;transform:scale(.96);}}
-.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.24);}}
 </style></head><body>
 <div class="cal">{_dcols_h}</div>
 <script>
@@ -1615,64 +1644,11 @@ document.querySelectorAll('.kc').forEach(function(c){{
         components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-html,body{{height:100%;background:transparent;
-           font-family:-apple-system,'Segoe UI',sans-serif;}}
-body{{overflow-x:auto;overflow-y:auto;}}
-/* ── fila única de columnas con scroll horizontal ── */
-.kb{{display:flex;flex-direction:row;flex-wrap:nowrap;
-    gap:10px;padding:2px 2px 10px;align-items:flex-start;}}
-.kk{{flex:0 0 {_COL_W}px;width:{_COL_W}px;
-     background:{_TC['card1']};border:1px solid {_TC['border']};
-     border-radius:14px;padding:11px 9px;}}
+{_KC_CSS}
+.kb{{display:flex;flex-direction:row;flex-wrap:nowrap;gap:10px;padding:2px 2px 10px;align-items:flex-start;}}
+.kk{{flex:0 0 {_COL_W}px;width:{_COL_W}px;background:{_TC['card1']};border:1px solid {_TC['border']};border-radius:14px;padding:11px 9px;}}
 .kk-top{{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}}
 .kk-hdr{{font-size:0.68rem;font-weight:900;letter-spacing:0.05em;}}
-.kk-add{{background:rgba({_ABR},0.06);border:1px solid rgba({_ABR},0.16);
-         border-radius:6px;color:{_TC['meta_clr']};cursor:pointer;
-         font-size:1rem;font-weight:700;line-height:1;padding:2px 7px;
-         transition:all .15s;flex-shrink:0;}}
-.kk-add:hover{{background:rgba({_ABR},0.16);border-color:rgba({_ABR},0.40);
-              color:rgb({_ABR});}}
-.kk-cnt{{font-size:0.48rem;color:{_TC['txt_dim']};font-weight:700;margin-bottom:9px;}}
-.dz{{min-height:54px;border-radius:9px;border:2px dashed transparent;
-    padding:3px;transition:all .18s;}}
-.dz.ov{{border-color:rgba({_ABR},.38)!important;background:rgba({_ABR},.04);}}
-.kc{{background:{_TC['card2']};border:1px solid {_TC['border']};
-     border-radius:9px;padding:8px;margin-bottom:5px;cursor:grab;}}
-.kc:active{{cursor:grabbing;}}
-.kc-top{{display:flex;align-items:center;gap:5px;margin-bottom:5px;}}
-.kc-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
-.kc-ico{{font-size:0.58rem;flex:1;}}
-.kc-chk{{width:13px;height:13px;accent-color:#23D160;cursor:pointer;flex-shrink:0;}}
-.kc-nm{{font-size:0.70rem;font-weight:600;color:{_TC['nm_clr']};
-        line-height:1.3;word-break:break-word;}}
-.kc-meta{{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}}
-.kc-proj{{font-size:0.52rem;color:{_TC['meta_clr']};background:rgba({_ABR},0.08);
-          border-radius:4px;padding:1px 4px;}}
-.kc-fc{{font-size:0.52rem;color:{_TC['meta_clr']};}}
-.kc-hrs{{font-size:0.52rem;color:rgb({_ABR});font-weight:700;
-         background:rgba({_ABR},0.13);border-radius:4px;padding:1px 5px;}}
-.kc-delay{{font-size:0.52rem;color:#FF4757;font-weight:700;
-           background:rgba(255,71,87,0.10);border-radius:4px;padding:1px 4px;}}
-.kc-cp{{background:transparent;border:none;color:#334155;cursor:pointer;
-        font-size:0.70rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
-.kc-cp:hover{{color:rgb({_ABR});}}
-.kc-st{{background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.22);
-        border-radius:4px;color:#64748B;cursor:pointer;font-size:0.50rem;font-weight:800;
-        line-height:1;padding:2px 4px;flex-shrink:0;transition:all .15s;}}
-.kc-st:hover{{background:rgba({_ABR},0.14);border-color:rgba({_ABR},0.30);color:rgb({_ABR});}}
-.kc-del{{background:transparent;border:none;color:#334155;cursor:pointer;
-         font-size:0.62rem;line-height:1;padding:1px 3px;flex-shrink:0;transition:color .15s;}}
-.kc-del:hover{{color:#FF4757;}}
-.kc-del.conf{{color:#FF4757!important;font-weight:700;background:rgba(255,71,87,0.10);
-              border-radius:3px;}}
-.sortable-ghost{{opacity:.18;transform:scale(.94);}}
-.sortable-chosen{{box-shadow:0 4px 18px rgba({_ABR},.26);}}
-/* scrollbar delgado */
-::-webkit-scrollbar{{height:5px;width:5px;}}
-::-webkit-scrollbar-track{{background:transparent;}}
-::-webkit-scrollbar-thumb{{background:rgba({_ABR},0.25);border-radius:3px;}}
-::-webkit-scrollbar-thumb:hover{{background:rgba({_ABR},0.45);}}
 </style></head><body>
 <div class="kb">{_dcols_h}</div>
 <script>
