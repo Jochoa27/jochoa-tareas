@@ -229,6 +229,13 @@ def cargar(mtime):
             else:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(val)
         df = df[df["TAREA"].astype(str).str.strip() != ""].copy()
+        # ORDEN: columna de ordenamiento persistente dentro de cada grupo
+        if "ORDEN" not in df.columns:
+            df["ORDEN"] = list(range(0, len(df) * 10, 10))
+        else:
+            df["ORDEN"] = pd.to_numeric(df["ORDEN"], errors="coerce")
+            max_ord = int(df["ORDEN"].max() or 0)
+            df["ORDEN"] = df["ORDEN"].fillna(max_ord + 10).astype(int)
         df["PRIO_ORD"] = df["PRIORIDAD"].map(PRIO_ORD).fillna(99)
         # URGENCIA dinámica: si col es 0 o NaN, calcular desde fecha
         def _urg(row):
@@ -725,6 +732,31 @@ if mod == "Centro de Comando":
                 st.session_state["add_task_defaults"] = {"field": _fn2, "value": _fv2}
                 st.session_state["_clr_action"] = True
                 st.rerun()
+            # reorder: _pts = ["reorder", "<group>", "id1,id2,..."]
+            if _aty == "reorder":
+                _ids_str = _pts[2] if len(_pts) >= 3 else ""
+                st.session_state["_clr_action"] = True
+                if _token() and _ids_str:
+                    _new_ids = [int(x) for x in _ids_str.split(",") if x.strip()]
+                    if _new_ids:
+                        _dfc_r = df_raw.copy()
+                        if "ORDEN" not in _dfc_r.columns:
+                            _dfc_r["ORDEN"] = list(range(0, len(_dfc_r) * 10, 10))
+                        _cur_ords = sorted(
+                            _dfc_r.loc[_dfc_r["ID"].isin(_new_ids), "ORDEN"]
+                            .dropna().astype(int).tolist()
+                        )
+                        while len(_cur_ords) < len(_new_ids):
+                            _cur_ords.append((_cur_ords[-1] if _cur_ords else 0) + 10)
+                        for _tid_r, _ord_v in zip(_new_ids, _cur_ords):
+                            _dfc_r.loc[_dfc_r["ID"] == _tid_r, "ORDEN"] = _ord_v
+                        with st.spinner("Guardando orden..."):
+                            _ok_r, _ms_r = guardar_github(_dfc_r)
+                        if _ok_r:
+                            st.toast("✅ Orden guardado"); st.rerun()
+                        else:
+                            st.error(_ms_r)
+                st.rerun()
             _tid = int(_pts[1] if len(_pts) >= 2 else _pts[0])
             _val = _pts[2] if len(_pts) >= 3 else ""
             st.session_state["_clr_action"] = True   # limpiar widget en PRÓXIMO rerun
@@ -1220,7 +1252,7 @@ document.querySelectorAll('.kc').forEach(function(c){{
         _dcols_h = ""
         _tok_add = _token()
         for _gval in _kgroups:
-            _gdf = _kac[_kac[_kfield].fillna("") == _gval]
+            _gdf = _kac[_kac[_kfield].fillna("") == _gval].sort_values("ORDEN")
             if len(_gdf) > _mx_t: _mx_t = len(_gdf)
             _gc2  = _kcolors.get(_gval, C_GRIS)
             _gi   = _kicons.get(_gval, "")
@@ -1345,6 +1377,12 @@ document.querySelectorAll('.dz').forEach(function(dz){{
     group:'kb',animation:150,ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
     onAdd:function(evt){{
       if(HT)nfy('field:'+evt.item.dataset.id+':'+evt.to.dataset.field+':'+evt.to.dataset.group);
+    }},
+    onEnd:function(evt){{
+      if(HT&&evt.from===evt.to){{
+        var ids=Array.from(evt.from.children).map(function(c){{return c.dataset.id;}}).join(',');
+        nfy('reorder:'+evt.from.dataset.group+':'+ids);
+      }}
     }},
     onOver:function(evt){{evt.to.classList.add('ov');}},
     onLeave:function(evt){{evt.from.classList.remove('ov');}}
@@ -1507,8 +1545,10 @@ function notify(type,val){{
 Sortable.create(document.getElementById('sl'),{{
   animation:160,handle:'.hdl',ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
   onEnd:function(){{
-    var ids=Array.from(document.getElementById('sl').children).map(function(c){{return c.dataset.id;}}).join(',');
-    notify('order',ids);
+    if(hasToken){{
+      var ids=Array.from(document.getElementById('sl').children).map(function(c){{return c.dataset.id;}}).join(',');
+      notify('action','reorder::'+ids);
+    }}
   }}
 }});
 if(hasToken){{
