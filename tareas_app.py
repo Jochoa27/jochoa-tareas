@@ -1034,7 +1034,7 @@ if mod == "Centro de Comando":
         for _i in range(7):
             _d     = HOY + timedelta(days=_i)
             _d_str = _d.strftime("%Y-%m-%d")
-            _td    = _cal_ac[_cal_ac["FECHA_COMPROMISO"].dt.date == _d]
+            _td    = _cal_ac[_cal_ac["FECHA_COMPROMISO"].dt.date == _d].sort_values("ORDEN")
             if len(_td) > _mx_t: _mx_t = len(_td)
             _es_h  = (_i == 0)
             _hc    = f"rgb({_ABR})" if _es_h else _TC["meta_clr"]
@@ -1152,6 +1152,12 @@ document.querySelectorAll('.dz').forEach(function(dz){{
   Sortable.create(dz,{{
     group:'cal',animation:150,ghostClass:'sortable-ghost',chosenClass:'sortable-chosen',
     onAdd:function(evt){{if(HT)nfy('date:'+evt.item.dataset.id+':'+evt.to.dataset.date);}},
+    onEnd:function(evt){{
+      if(HT&&evt.from===evt.to){{
+        var ids=Array.from(evt.from.children).map(function(c){{return c.dataset.id;}}).join(',');
+        nfy('reorder:'+evt.from.dataset.date+':'+ids);
+      }}
+    }},
     onOver:function(evt){{evt.to.classList.add('ov');}},
     onLeave:function(evt){{evt.from.classList.remove('ov');}}
   }});
