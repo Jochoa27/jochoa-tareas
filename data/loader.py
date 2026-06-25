@@ -46,14 +46,16 @@ def cargar(mtime):
             "DESCRIPCION": "", "TIPO": "Tarea", "CATEGORIA": "Personal",
             "PRIORIDAD": "Media", "ESTADO": "Pendiente",
             "IMPACTO": 3, "URGENCIA": 3, "ESFUERZO_HRS": 1.0, "HORAS_REALES": 0.0,
-            "TERCERO": "", "PROYECTO": "GENERAL", "AREA": "Trabajo", "NOTAS": "",
+            "TERCERO": "", "PROYECTO": "GENERAL", "AREA": "Trabajo",
+            "NOTAS": "", "COMENTARIOS": "",
         }
+        _str_cols = ("DESCRIPCION", "TIPO", "CATEGORIA", "PRIORIDAD", "ESTADO",
+                     "TERCERO", "PROYECTO", "AREA", "NOTAS", "COMENTARIOS")
         for col, val in defaults.items():
             if col not in df.columns:
                 df[col] = val
-            if df[col].dtype == object or col in ("DESCRIPCION", "TIPO", "CATEGORIA",
-               "PRIORIDAD", "ESTADO", "TERCERO", "PROYECTO", "AREA", "NOTAS"):
-                df[col] = df[col].fillna(val)
+            if df[col].dtype == object or col in _str_cols:
+                df[col] = df[col].fillna(val).astype(object)
             else:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(val)
         df = df[df["TAREA"].astype(str).str.strip() != ""].copy()
