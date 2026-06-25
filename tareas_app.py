@@ -534,6 +534,10 @@ if mod == "Centro de Comando":
                 st.rerun()
             elif _token():
                 _dfc = df_raw.copy()
+                for _stc in ["TAREA","ESTADO","PRIORIDAD","TIPO","CATEGORIA",
+                              "PROYECTO","AREA","TERCERO","NOTAS","COMENTARIOS","DESCRIPCION"]:
+                    if _stc in _dfc.columns:
+                        _dfc[_stc] = _dfc[_stc].fillna("").astype(object)
                 _mk  = _dfc["ID"] == _tid
                 if _aty == "date":
                     _dfc.loc[_mk, "FECHA_COMPROMISO"] = pd.Timestamp(_val) if _val.strip() else pd.NaT
@@ -861,8 +865,12 @@ if mod == "Centro de Comando":
 
             if _guardar_d and _token():
                 _dfc2 = df_raw.copy()
-                if "COMENTARIOS" not in _dfc2.columns:
-                    _dfc2["COMENTARIOS"] = ""
+                for _stc in ["TAREA","ESTADO","PRIORIDAD","TIPO","CATEGORIA",
+                              "PROYECTO","AREA","TERCERO","NOTAS","COMENTARIOS","DESCRIPCION"]:
+                    if _stc in _dfc2.columns:
+                        _dfc2[_stc] = _dfc2[_stc].fillna("").astype(object)
+                    else:
+                        _dfc2[_stc] = ""
                 _mk2 = _dfc2["ID"] == _dt_id
                 _dfc2.loc[_mk2, "TAREA"]            = _new_tarea
                 _dfc2.loc[_mk2, "ESTADO"]           = _new_est
@@ -907,7 +915,9 @@ if mod == "Centro de Comando":
                 if _new_cmt.strip():
                     _prepend.append(f"[{_ts_auto}] {_new_cmt.strip()}")
                 if _prepend:
-                    _p_cmt = str(_dfc2.loc[_mk2, "COMENTARIOS"].values[0] or "")
+                    # Garantizar dtype object antes de asignar string (pandas 2.2+)
+                    _dfc2["COMENTARIOS"] = _dfc2["COMENTARIOS"].fillna("").astype(object)
+                    _p_cmt = str(_dfc2.loc[_mk2, "COMENTARIOS"].values[0])
                     _blq   = "\n".join(_prepend)
                     _dfc2.loc[_mk2, "COMENTARIOS"] = (
                         _blq + ("\n" + _p_cmt if _p_cmt else "")).strip()
